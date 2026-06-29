@@ -1,0 +1,35 @@
+# ============================================================================
+# FraudShield Lite AI — Backend dependencies (Python 3.11)
+# ============================================================================
+
+# --- Web framework ---
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+
+# --- Database (async + sync drivers) ---
+sqlalchemy[asyncio]==2.0.25
+asyncpg==0.29.0
+alembic==1.13.1
+psycopg2-binary==2.9.9
+
+# --- Validation / settings ---
+pydantic==2.5.3
+pydantic-settings==2.1.0
+
+# --- Streaming ---
+confluent-kafka==2.3.0
+
+# --- Cache ---
+redis==5.0.1
+
+# --- AI layer ---
+# Provider-agnostic scoring: Gemini (default) or Claude. Pick via LLM_PROVIDER.
+# Google AI Studio — free key, native JSON mode (response_mime_type).
+google-generativeai==0.8.3
+# Anthropic kept for drop-in swap. 0.39.0 needs httpx<0.28 (see below).
+anthropic==0.39.0
+# httpx pinned: anthropic 0.39.0 passes proxies= which httpx>=0.28 removed.
+httpx==0.26.0
+
+# --- Misc ---
+python-dotenv==1.0.0

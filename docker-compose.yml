@@ -1,0 +1,171 @@
+# ============================================================================
+# FraudShield Lite AI — Infrastructure Stack
+# ----------------------------------------------------------------------------
+# Brings up every backing service the platform depends on:
+#   - Zookeeper   : coordination layer required by this Kafka build
+#   - Kafka       : transaction event stream (transactions.raw / .scored)
+#   - Postgres 15 : durable store for transactions, fraud_results, feedback
+#   - Redis 7     : dedup, velocity counters, behavioral context, AI cache
+#   - Kafka UI    : browser inspector for topics/messages (dev convenience)
+#
+# Design notes (interview-defensible):
+#   * Every service has a healthcheck so `depends_on: condition` gates startup
+#     order deterministically — Kafka will not be marked healthy until the
+#     broker actually answers, which prevents the classic "consumer connects
+#     before broker is ready" race.
+#   * Postgres auto-runs db/init.sql on first boot via the docker-entrypoint
+#     initdb hook, so the schema exists the moment the container is healthy.
+#   * Named volumes persist PG + Redis data across `docker compose down`
+#     (use `down -v` to wipe). Kafka/ZK are ephemeral by design in dev.
+#
+# Run from repo root:  docker compose up -d
+# ============================================================================
+
+services:
+
+  # --------------------------------------------------------------------------
+  # Zookeeper — coordination service for the Kafka broker.
+  # (confluentinc 7.5.x images still use ZK; KRaft is an alternative but ZK
+  #  keeps this stack the closest match to the most common Kafka tutorials.)
+  # --------------------------------------------------------------------------
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.3
+    container_name: fraudshield-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+      KAFKA_OPTS: "-Dzookeeper.4lw.commands.whitelist=ruok,srvr"
+    ports:
+      - "2181:2181"
+    healthcheck:
+      # `ruok` -> `imok` is ZK's built-in liveness probe over the client port.
+      test: ["CMD-SHELL", "echo ruok | nc -w 2 localhost 2181 | grep -q imok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - fraudshield
+
+  # --------------------------------------------------------------------------
+  # Kafka — the event backbone. Producer (FastAPI) publishes transactions.raw;
+  # the consumer process polls it, scores via Claude, and emits transactions.scored.
+  #
+  # Dual listeners are the key detail for a Dockerized broker:
+  #   INTERNAL (kafka:29092) -> used by containers on the compose network
+  #   EXTERNAL (localhost:9092) -> used by processes on the host (your backend
+  #                                running locally during dev)
+  # Advertising both lets the same broker serve in-network and host clients.
+  # --------------------------------------------------------------------------
+  kafka:
+    image: confluentinc/cp-kafka:7.5.3
+    container_name: fraudshield-kafka
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    ports:
+      - "9092:9092"   # host-facing (EXTERNAL listener)
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      # Map each listener name to a security protocol.
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      # Bind addresses inside the container.
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:29092,EXTERNAL://0.0.0.0:9092
+      # Addresses handed back to clients on metadata requests.
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      # Single-broker dev cluster -> replication factor must be 1 everywhere.
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      # Let the producer create transactions.raw / transactions.scored on first use.
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    healthcheck:
+      # Broker is "ready" only when it can list its own API versions.
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+    networks:
+      - fraudshield
+
+  # --------------------------------------------------------------------------
+  # PostgreSQL 15 — system of record. init.sql runs once on an empty data dir.
+  # --------------------------------------------------------------------------
+  postgres:
+    image: postgres:15-alpine
+    container_name: fraudshield-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-fraudshield}
+      POSTGRES_USER: ${POSTGRES_USER:-fraud}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fraud}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Anything in /docker-entrypoint-initdb.d runs alphabetically on first boot.
+      - ./backend/db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fraud} -d ${POSTGRES_DB:-fraudshield}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - fraudshield
+
+  # --------------------------------------------------------------------------
+  # Redis 7 — low-latency state: dedup keys, velocity counters, user context,
+  # and the AI response cache that keeps Claude API costs sub-linear.
+  # --------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: fraudshield-redis
+    # appendonly = durability across restarts so velocity/context survive a bounce.
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - fraudshield
+
+  # --------------------------------------------------------------------------
+  # Kafka UI — dev-only web console at http://localhost:8080 to watch messages
+  # flow through transactions.raw / transactions.scored.
+  # --------------------------------------------------------------------------
+  kafka-ui:
+    image: provectuslabs/kafka-ui:v0.7.2
+    container_name: fraudshield-kafka-ui
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: fraudshield
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      DYNAMIC_CONFIG_ENABLED: "true"
+    networks:
+      - fraudshield
+
+# ----------------------------------------------------------------------------
+# Named volumes — survive `docker compose down`; removed with `down -v`.
+# ----------------------------------------------------------------------------
+volumes:
+  pgdata:
+  redisdata:
+
+# ----------------------------------------------------------------------------
+# Dedicated bridge network so services resolve each other by name (kafka,
+# postgres, redis) without leaking onto the host's default network.
+# ----------------------------------------------------------------------------
+networks:
+  fraudshield:
+    driver: bridge

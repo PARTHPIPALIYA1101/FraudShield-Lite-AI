@@ -59,8 +59,9 @@ vendor.
 
 **Request lifecycle**
 
-1. `POST /transactions` → idempotency check (Redis), persist raw row (Postgres),
-   publish to `transactions.raw` keyed by `user_id`, return `202` immediately.
+1. `POST /transactions` → persist raw row (Postgres, `status=SCORING`), publish to
+   `transactions.raw` keyed by `user_id`, return `202` immediately. Each POST is a
+   distinct event (no content dedup); idempotency is at the `transaction_id` level.
 2. The **consumer** polls the topic, builds the user's behavioral context from
    Redis (velocity, running average, usual merchants, prior analyst feedback),
    and calls the scorer.
@@ -110,6 +111,10 @@ vendor.
 - **AI-recommends / humans-decide state machine** — the AI never auto-completes or
   declines a payment; a guarded, audited lifecycle (user confirmation + analyst
   review) makes the binding call. Full transition timeline per transaction.
+- **Calibrated scoring + hard guardrails** — the prompt is anchored with few-shot
+  examples so normal purchases approve and only genuine fraud declines, plus a
+  deterministic policy layer (e.g. new users can't be auto-approved above
+  `NEW_USER_AMOUNT_LIMIT`) that the LLM can't override.
 - **No-retraining feedback loop** — analyst labels reshape future prompts per user.
 - **Streaming AI analyst chat** — converse about flagged transactions; pinned
   transactions become grounding context; multi-turn memory persisted per session.
@@ -137,8 +142,8 @@ vendor.
 docker compose up -d        # Kafka, Zookeeper, Postgres, Redis, Kafka UI
 docker compose ps           # all should be "healthy"
 ```
-Postgres auto-runs `backend/db/init.sql` on first boot (creates the 4 tables).
-Kafka UI is at http://localhost:8080.
+Postgres auto-runs `backend/db/init.sql` on first boot (creates the 5 tables); the
+backend also applies idempotent migrations on startup. Kafka UI is at http://localhost:8080.
 
 ### 2. Backend
 ```bash
@@ -175,6 +180,7 @@ All backend config is in `backend/.env` (typed/validated by `config.py`):
 | `DATABASE_URL` | `postgresql+asyncpg://fraud:fraud@localhost:5432/fraudshield` | |
 | `REDIS_URL` | `redis://localhost:6379` | |
 | `KAFKA_BOOTSTRAP_SERVERS` | `localhost:9092` | |
+| `NEW_USER_AMOUNT_LIMIT` | `100.0` | new users (no history) can't be auto-approved above this |
 | `*_TTL_SECONDS` | — | dedup / cache / velocity windows |
 
 Frontend config is in `frontend/.env.local`:
@@ -233,7 +239,7 @@ audit row, and broadcast the new state over the WebSocket.
 
 ## Design decisions
 
-- **LLM as scoring engine, not a  classifier service.** The fraud rubric lives in a
+- **LLM as scoring engine, not a classifier service.** The fraud rubric lives in a
   prompt; the model returns structured JSON. This trades a tiny bit of latency
   (mitigated by the cache) for explainability — every decision ships with risk
   factors and a human-readable rationale.
@@ -255,6 +261,11 @@ audit row, and broadcast the new state over the WebSocket.
   keyed on `transaction_id`, `fraud_results.transaction_id` is UNIQUE so the consumer
   UPSERTs (Kafka at-least-once → exactly-once at the DB), and the AI status transition
   is guarded to `expected_from={SCORING}` so a redelivery can't clobber a human action.
+- **Deterministic guardrails over a probabilistic model.** The LLM is a calibrated
+  estimator, not a hard guarantee, so non-negotiable business rules live in
+  `policy.py` and run after scoring (e.g. a new user with no history can't be
+  auto-approved above `NEW_USER_AMOUNT_LIMIT`). The model can lower friction but
+  never bypass a hard limit.
 - **Fail-soft, never fail-closed.** Redis errors return safe defaults; an LLM
   failure persists a REVIEW fallback and still advances the offset. No transaction
   is silently dropped.
