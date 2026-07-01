@@ -16,13 +16,11 @@ class TransactionStatus:
     PENDING_ANALYST_REVIEW = "PENDING_ANALYST_REVIEW"
     DECLINED = "DECLINED"
 
-
 class Actor:
     AI = "AI"
     USER = "USER"
     ANALYST = "ANALYST"
     SYSTEM = "SYSTEM"
-
 
 # AI recommendation -> the lifecycle state it routes into. DECLINE never -> DECLINED.
 RECOMMENDATION_TO_STATUS: dict[str, str] = {

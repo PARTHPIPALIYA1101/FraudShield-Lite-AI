@@ -2,10 +2,14 @@
 
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
+import { TimezoneSelect } from "@/components/TimezoneSelect";
 import { ApiError, createTransaction } from "@/lib/api";
-import { formatCurrency } from "@/lib/format";
+import { useAuth } from "@/lib/auth";
+import { convertToUSD, CURRENCIES, currencySymbol } from "@/lib/currency";
+import { formatCurrency, formatInZone } from "@/lib/format";
+import { useTimezone } from "@/lib/timezone";
 import type { TransactionCreate } from "@/lib/types";
 
 interface Preset {
@@ -23,7 +27,7 @@ const PRESETS: Preset[] = [
       merchant: "Starbucks",
       amount: 6.5,
       is_foreign_merchant: false,
-      location: "Mumbai, IN",
+      location: "Asia/Kolkata",
     },
   },
   {
@@ -34,7 +38,7 @@ const PRESETS: Preset[] = [
       merchant: "LuxuryWatchesParis",
       amount: 8500,
       is_foreign_merchant: true,
-      location: "Paris, FR",
+      location: "Europe/Paris",
     },
   },
   {
@@ -45,7 +49,7 @@ const PRESETS: Preset[] = [
       merchant: "DarkBazaarRU",
       amount: 4200,
       is_foreign_merchant: true,
-      location: "Moscow, RU",
+      location: "Europe/Moscow",
     },
   },
   {
@@ -56,7 +60,7 @@ const PRESETS: Preset[] = [
       merchant: "OnlineGameStore",
       amount: 320,
       is_foreign_merchant: false,
-      location: "Delhi, IN",
+      location: "Asia/Kolkata",
     },
   },
 ];
@@ -67,12 +71,39 @@ interface TransactionFormProps {
 
 export function TransactionForm({ onSubmitted }: TransactionFormProps) {
   const [form, setForm] = useState<TransactionCreate>(PRESETS[0].values);
+  // Amount is entered in the user's chosen currency, then converted to USD.
+  const [currency, setCurrency] = useState<string>("USD");
+  const [amountInput, setAmountInput] = useState<string>(
+    String(PRESETS[0].values.amount),
+  );
+  const [usdPreview, setUsdPreview] = useState<number | null>(
+    PRESETS[0].values.amount,
+  );
+  const [rateError, setRateError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [now, setNow] = useState<Date | null>(null); // set after mount (SSR-safe)
+
+  // One shared timezone: the form's location picker and the global header
+  // picker both read/write this, so changing either keeps them in sync.
+  const { tz: displayTz, setTz } = useTimezone();
+
+  // The user_id is the logged-in account's claimed handle — fixed, not editable.
+  const { user } = useAuth();
+  const accountUserId = user?.user_id ?? "";
+
+  // Keep the form's user_id bound to the account (also covers a re-login switch).
+  useEffect(() => {
+    if (accountUserId) update("user_id", accountUserId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accountUserId]);
 
   const applyPreset = (p: Preset) => {
-    setForm(p.values);
+    setForm({ ...p.values, user_id: accountUserId || p.values.user_id });
+    setCurrency("USD");
+    setAmountInput(String(p.values.amount));
+    if (p.values.location) setTz(p.values.location); // sync the shared timezone too
     setError(null);
     setFlash(null);
   };
@@ -82,18 +113,67 @@ export function TransactionForm({ onSubmitted }: TransactionFormProps) {
     value: TransactionCreate[K],
   ) => setForm((f) => ({ ...f, [key]: value }));
 
+  // Live USD preview whenever the amount or currency changes.
+  useEffect(() => {
+    const n = Number(amountInput);
+    if (amountInput.trim() === "" || Number.isNaN(n) || n <= 0) {
+      setUsdPreview(null);
+      setRateError(null);
+      return;
+    }
+    if (currency === "USD") {
+      setUsdPreview(n);
+      setRateError(null);
+      return;
+    }
+    let cancelled = false;
+    convertToUSD(n, currency)
+      .then((usd) => {
+        if (!cancelled) {
+          setUsdPreview(usd);
+          setRateError(null);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setUsdPreview(null);
+          setRateError("Live rate unavailable — try again.");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [amountInput, currency]);
+
+  // Tick once a second so the location clock stays synced to real time.
+  useEffect(() => {
+    setNow(new Date());
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
   const submit = async () => {
     setSubmitting(true);
     setError(null);
     setFlash(null);
     try {
+      const n = Number(amountInput);
+      const usd = await convertToUSD(n, currency); // fresh convert avoids stale preview
       const res = await createTransaction({
         ...form,
+        amount: usd,
+        original_currency: currency,
+        original_amount: n,
+        location: displayTz, // the shared, in-sync timezone
         merchant: form.merchant.trim(),
-        user_id: form.user_id.trim(),
+        user_id: (accountUserId || form.user_id).trim(),
       });
       // Every submission is a distinct event now — always queued for fresh scoring.
-      setFlash(`Queued ${formatCurrency(form.amount)} at ${form.merchant}.`);
+      const origin =
+        currency === "USD"
+          ? ""
+          : ` (${currencySymbol(currency)}${n} ${currency})`;
+      setFlash(`Queued ${formatCurrency(usd)}${origin} at ${form.merchant}.`);
       onSubmitted?.(res.transaction_id);
     } catch (e) {
       if (e instanceof ApiError) setError(e.message);
@@ -103,10 +183,13 @@ export function TransactionForm({ onSubmitted }: TransactionFormProps) {
     }
   };
 
+  const amt = Number(amountInput);
   const canSubmit =
     form.user_id.trim() !== "" &&
     form.merchant.trim() !== "" &&
-    form.amount >= 0 &&
+    amountInput.trim() !== "" &&
+    !Number.isNaN(amt) &&
+    amt > 0 && // a real transaction must move a positive amount
     !submitting;
 
   return (
@@ -129,11 +212,12 @@ export function TransactionForm({ onSubmitted }: TransactionFormProps) {
 
       {/* Fields */}
       <div className="mt-4 space-y-3">
-        <Field label="User ID">
+        <Field label="User ID (your account)">
           <input
-            value={form.user_id}
-            onChange={(e) => update("user_id", e.target.value)}
-            className={inputCls}
+            value={accountUserId || form.user_id}
+            readOnly
+            title="Taken from your signed-in account"
+            className={`${inputCls} cursor-not-allowed text-white/60`}
           />
         </Field>
         <Field label="Merchant">
@@ -144,24 +228,66 @@ export function TransactionForm({ onSubmitted }: TransactionFormProps) {
           />
         </Field>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Amount (USD)">
+          <Field label="Amount">
             <input
               type="number"
               min={0}
               step="0.01"
-              value={form.amount}
-              onChange={(e) => update("amount", Number(e.target.value))}
+              value={amountInput}
+              onChange={(e) => setAmountInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && canSubmit) submit();
+              }}
               className={inputCls}
             />
           </Field>
-          <Field label="Location">
-            <input
-              value={form.location ?? ""}
-              onChange={(e) => update("location", e.target.value)}
+          <Field label="Currency">
+            <select
+              value={currency}
+              onChange={(e) => setCurrency(e.target.value)}
               className={inputCls}
-            />
+            >
+              {CURRENCIES.map((c) => (
+                <option key={c.code} value={c.code} className="bg-neutral-900">
+                  {c.code} · {c.label}
+                </option>
+              ))}
+            </select>
           </Field>
         </div>
+
+        {/* Live USD conversion preview */}
+        <div className="text-xs text-white/50">
+          {rateError ? (
+            <span className="text-amber-400">{rateError}</span>
+          ) : usdPreview != null ? (
+            currency === "USD" ? (
+              <>Submitted as {formatCurrency(usdPreview)}.</>
+            ) : (
+              <>
+                ≈ <span className="text-emerald-400">{formatCurrency(usdPreview)}</span>{" "}
+                at live rate — submitted in USD.
+              </>
+            )
+          ) : (
+            <>Enter an amount to see the USD equivalent.</>
+          )}
+        </div>
+
+        <Field label="Location (timezone)">
+          <TimezoneSelect value={displayTz} onChange={setTz} />
+        </Field>
+
+        {/* Live transaction clock in the shared timezone, synced to real time */}
+        <div className="rounded-md border border-white/10 bg-white/5 px-2.5 py-2 text-[11px] leading-relaxed text-white/50">
+          <div>
+            Now ({displayTz}):{" "}
+            <span className="text-white/80">
+              {now ? formatInZone(now, displayTz) : "…"}
+            </span>
+          </div>
+        </div>
+
         <label className="flex items-center gap-2 text-sm text-white/70">
           <input
             type="checkbox"

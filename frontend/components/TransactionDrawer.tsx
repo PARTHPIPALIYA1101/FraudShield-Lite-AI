@@ -5,7 +5,9 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { getTransaction } from "@/lib/api";
-import { formatCurrency, formatRelativeTime } from "@/lib/format";
+import { currencySymbol } from "@/lib/currency";
+import { formatCurrency, formatInZone, formatRelativeTime } from "@/lib/format";
+import { useTimezone } from "@/lib/timezone";
 import type { TransactionWithResult } from "@/lib/types";
 import { AIScoreCard } from "./AIScoreCard";
 import { ActionButtons } from "./ActionButtons";
@@ -30,6 +32,7 @@ export function TransactionDrawer({
 }: TransactionDrawerProps) {
   const [data, setData] = useState<TransactionWithResult | null>(null);
   const [loading, setLoading] = useState(false);
+  const { tz } = useTimezone();
 
   const open = transactionId !== null;
 
@@ -155,10 +158,19 @@ export function TransactionDrawer({
 
               {/* Transaction facts */}
               <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-                <Fact label="Amount" value={formatCurrency(txn.amount)} />
+                <Fact
+                  label="Amount"
+                  value={
+                    txn.original_currency &&
+                    txn.original_currency !== "USD" &&
+                    txn.original_amount != null
+                      ? `${currencySymbol(txn.original_currency)}${txn.original_amount} ${txn.original_currency} → ${formatCurrency(txn.amount)}`
+                      : formatCurrency(txn.amount)
+                  }
+                />
                 <Fact label="Foreign" value={txn.is_foreign_merchant ? "Yes" : "No"} />
                 <Fact label="Location" value={txn.location ?? "—"} />
-                <Fact label="Time" value={new Date(txn.timestamp).toLocaleString()} />
+                <Fact label={`Time (${tz})`} value={formatInZone(txn.timestamp, tz)} />
                 <Fact label="Transaction ID" value={txn.id} mono span2 />
               </dl>
 

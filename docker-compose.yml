@@ -1,28 +1,10 @@
 # ============================================================================
 # FraudShield Lite AI — Infrastructure Stack
 # ----------------------------------------------------------------------------
-# Brings up every backing service the platform depends on:
-#   - Zookeeper   : coordination layer required by this Kafka build
-#   - Kafka       : transaction event stream (transactions.raw / .scored)
-#   - Postgres 15 : durable store for transactions, fraud_results, feedback
-#   - Redis 7     : dedup, velocity counters, behavioral context, AI cache
-#   - Kafka UI    : browser inspector for topics/messages (dev convenience)
-#
-# Design notes (interview-defensible):
-#   * Every service has a healthcheck so `depends_on: condition` gates startup
-#     order deterministically — Kafka will not be marked healthy until the
-#     broker actually answers, which prevents the classic "consumer connects
-#     before broker is ready" race.
-#   * Postgres auto-runs db/init.sql on first boot via the docker-entrypoint
-#     initdb hook, so the schema exists the moment the container is healthy.
-#   * Named volumes persist PG + Redis data across `docker compose down`
-#     (use `down -v` to wipe). Kafka/ZK are ephemeral by design in dev.
-#
 # Run from repo root:  docker compose up -d
 # ============================================================================
 
 services:
-
   # --------------------------------------------------------------------------
   # Zookeeper — coordination service for the Kafka broker.
   # (confluentinc 7.5.x images still use ZK; KRaft is an alternative but ZK

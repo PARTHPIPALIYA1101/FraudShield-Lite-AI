@@ -42,9 +42,11 @@ export interface Transaction {
   id: string;
   user_id: string;
   merchant: string;
-  amount: number;
+  amount: number; // canonical USD
   is_foreign_merchant: boolean;
   location: string | null;
+  original_currency?: string | null; // what the user entered before conversion
+  original_amount?: number | null;
   status: TransactionStatus;
   timestamp: string; // ISO-8601
   created_at: string; // ISO-8601
@@ -101,13 +103,32 @@ export interface PaginatedTransactions {
   limit: number;
 }
 
+// Auth.
+export interface AuthUser {
+  email: string;
+  user_id: string;
+}
+
+export interface SignupRequest {
+  email: string;
+  password: string;
+  user_id: string;
+}
+
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
 // Request bodies.
 export interface TransactionCreate {
   user_id: string;
   merchant: string;
-  amount: number;
+  amount: number; // must be USD — convert client-side before submitting
   is_foreign_merchant?: boolean;
   location?: string | null;
+  original_currency?: string | null;
+  original_amount?: number | null;
 }
 
 export interface TransactionQueued {

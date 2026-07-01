@@ -34,9 +34,13 @@ CREATE TABLE IF NOT EXISTS transactions (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id             VARCHAR(50)  NOT NULL,
     merchant            VARCHAR(100) NOT NULL,
-    amount              DECIMAL(12, 2) NOT NULL CHECK (amount >= 0),
+    amount              DECIMAL(12, 2) NOT NULL CHECK (amount >= 0),  -- canonical USD
     is_foreign_merchant BOOLEAN      NOT NULL DEFAULT FALSE,
     location            VARCHAR(100),
+    -- What the user actually entered before client-side conversion to USD.
+    -- Kept for display/audit only; `amount` above remains the canonical USD value.
+    original_currency   VARCHAR(3)   DEFAULT 'USD',
+    original_amount     DECIMAL(12, 2) CHECK (original_amount IS NULL OR original_amount >= 0),
     -- status = the transaction lifecycle STATE MACHINE. This is distinct from the
     -- AI's recommendation (fraud_results.decision): the AI only recommends; the
     -- binding decision is made by a user and/or analyst. The AI can never reach a
@@ -67,6 +71,22 @@ CREATE INDEX IF NOT EXISTS idx_transactions_created_at
 -- Dashboard filter/aggregate by lifecycle state (e.g. ?status=PENDING_ANALYST_REVIEW).
 CREATE INDEX IF NOT EXISTS idx_transactions_status
     ON transactions (status, created_at DESC);
+
+-- ----------------------------------------------------------------------------
+-- users — accounts for the login/signup gate. `user_id` is the unique handle
+-- the person claims at signup and that pre-fills the transaction form; `email`
+-- is the unique login identity (stored lowercased). Passwords are never stored
+-- in plaintext — password_hash holds a self-describing PBKDF2-SHA256 string.
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS users (
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email          VARCHAR(255) NOT NULL,
+    user_id        VARCHAR(50)  NOT NULL,
+    password_hash  TEXT         NOT NULL,
+    created_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_users_email   UNIQUE (email),
+    CONSTRAINT uq_users_user_id UNIQUE (user_id)
+);
 
 -- ----------------------------------------------------------------------------
 -- fraud_results — Claude's structured assessment. Exactly one row per txn.

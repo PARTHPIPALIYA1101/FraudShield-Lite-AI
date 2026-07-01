@@ -1,11 +1,14 @@
 // Typed client for the FraudShield backend (single fetch wrapper + chat stream reader).
 
 import type {
+  AuthUser,
   ChatRequest,
   FeedbackCreate,
   FeedbackResponse,
   Health,
+  LoginRequest,
   PaginatedTransactions,
+  SignupRequest,
   StateActionRequest,
   StateActionResponse,
   Stats,
@@ -47,6 +50,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // 204/empty bodies -> undefined; otherwise parse JSON.
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
+}
+
+// Auth.
+export function signup(body: SignupRequest): Promise<AuthUser> {
+  return request<AuthUser>("/auth/signup", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function login(body: LoginRequest): Promise<AuthUser> {
+  return request<AuthUser>("/auth/login", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 }
 
 // System.

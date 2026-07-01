@@ -5,8 +5,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { listTransactions } from "@/lib/api";
-import { decisionColors, formatCurrency, formatRelativeTime, statusColors, statusLabel } from "@/lib/format";
+import { decisionColors, formatCurrency, formatInZone, formatRelativeTime, formatShortInZone, statusColors, statusLabel } from "@/lib/format";
 import { useWebSocket } from "@/lib/hooks/useWebSocket";
+import { useTimezone } from "@/lib/timezone";
 import type {
   Decision,
   TransactionStatus,
@@ -83,6 +84,7 @@ export function TransactionFeed({
   const [filter, setFilter] = useState<TransactionStatus | "ALL">("ALL");
   const [loading, setLoading] = useState(true); // until the first poll resolves
   const [error, setError] = useState(false); // last poll failed (stale data shown)
+  const { tz } = useTimezone();
   const mounted = useRef(true);
 
   const mergeItems = useCallback((incoming: FeedItem[]) => {
@@ -224,8 +226,12 @@ export function TransactionFeed({
                           </span>
                         )}
                       </div>
-                      <div className="truncate text-xs text-white/40">
-                        {r.user_id} · {formatRelativeTime(r.ts)}
+                      <div
+                        className="truncate text-xs text-white/40"
+                        title={formatInZone(r.ts, tz)}
+                      >
+                        {r.user_id} · {formatRelativeTime(r.ts)} ·{" "}
+                        {formatShortInZone(r.ts, tz)}
                       </div>
                     </div>
                     {/* amount + status (primary) + AI rec (secondary) */}

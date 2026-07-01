@@ -12,11 +12,14 @@ from fastapi.responses import StreamingResponse
 from config import settings
 from db import dispose_engine, ping_db
 from models import (
+    AuthUserOut,
     ChatRequest,
     FeedbackCreate,
     FeedbackResponse,
     HealthOut,
+    LoginRequest,
     PaginatedTransactions,
+    SignupRequest,
     StateActionRequest,
     StateActionResponse,
     StatsOut,
@@ -133,6 +136,76 @@ async def health() -> HealthOut:
     )
 
 
+# --- Auth: signup / login gate (identity source for the transaction form) ---
+@app.post(
+    "/auth/signup",
+    response_model=AuthUserOut,
+    status_code=status.HTTP_201_CREATED,
+    tags=["auth"],
+)
+async def signup(body: SignupRequest) -> AuthUserOut:
+    """Create an account. Email and user_id must both be unique (409 otherwise)."""
+    from sqlalchemy import text
+
+    from auth import hash_password
+    from db import session_scope
+
+    async with session_scope() as session:
+        # Pre-check for a friendly, specific error before hitting the DB constraint.
+        existing = (
+            await session.execute(
+                text(
+                    "SELECT email, user_id FROM users "
+                    "WHERE email = :email OR user_id = :user_id"
+                ),
+                {"email": body.email, "user_id": body.user_id},
+            )
+        ).fetchone()
+        if existing is not None:
+            m = existing._mapping
+            if m["email"] == body.email:
+                raise HTTPException(status.HTTP_409_CONFLICT, detail="Email already registered.")
+            raise HTTPException(status.HTTP_409_CONFLICT, detail="User ID already taken.")
+
+        await session.execute(
+            text(
+                "INSERT INTO users (email, user_id, password_hash) "
+                "VALUES (:email, :user_id, :password_hash)"
+            ),
+            {
+                "email": body.email,
+                "user_id": body.user_id,
+                "password_hash": hash_password(body.password),
+            },
+        )
+    logger.info("Signup: email=%s user_id=%s", body.email, body.user_id)
+    return AuthUserOut(email=body.email, user_id=body.user_id)
+
+
+@app.post("/auth/login", response_model=AuthUserOut, tags=["auth"])
+async def login(body: LoginRequest) -> AuthUserOut:
+    """Verify credentials and return the account's claimed user_id (401 on failure)."""
+    from sqlalchemy import text
+
+    from auth import verify_password
+    from db import session_scope
+
+    async with session_scope() as session:
+        row = (
+            await session.execute(
+                text("SELECT user_id, password_hash FROM users WHERE email = :email"),
+                {"email": body.email},
+            )
+        ).fetchone()
+
+    # Same generic error whether the email is unknown or the password is wrong.
+    if row is None or not verify_password(body.password, row._mapping["password_hash"]):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password.")
+
+    logger.info("Login: email=%s user_id=%s", body.email, row._mapping["user_id"])
+    return AuthUserOut(email=body.email, user_id=row._mapping["user_id"])
+
+
 # --- Transactions ---
 @app.post(
     "/transactions",
@@ -162,9 +235,11 @@ async def create_transaction(body: TransactionCreate) -> TransactionQueued:
     insert_sql = text(
         """
         INSERT INTO transactions
-            (id, user_id, merchant, amount, is_foreign_merchant, location, status)
+            (id, user_id, merchant, amount, is_foreign_merchant, location,
+             original_currency, original_amount, status)
         VALUES
-            (:id, :user_id, :merchant, :amount, :is_foreign_merchant, :location, 'SCORING')
+            (:id, :user_id, :merchant, :amount, :is_foreign_merchant, :location,
+             :original_currency, :original_amount, 'SCORING')
         RETURNING "timestamp"
         """
     )
@@ -184,6 +259,8 @@ async def create_transaction(body: TransactionCreate) -> TransactionQueued:
                     "amount": body.amount,
                     "is_foreign_merchant": body.is_foreign_merchant,
                     "location": body.location,
+                    "original_currency": body.original_currency,
+                    "original_amount": body.original_amount,
                 },
             )
             ts = result.scalar_one()
@@ -215,7 +292,8 @@ async def create_transaction(body: TransactionCreate) -> TransactionQueued:
 _TXN_SELECT = """
 SELECT
     t.id, t.user_id, t.merchant, t.amount, t.is_foreign_merchant,
-    t.location, t.status, t."timestamp", t.created_at,
+    t.location, t.original_currency, t.original_amount,
+    t.status, t."timestamp", t.created_at,
     fr.id            AS fr_id,
     fr.fraud_score   AS fr_fraud_score,
     fr.decision      AS fr_decision,
@@ -244,6 +322,10 @@ def _row_to_txn_with_result(row) -> TransactionWithResult:
         amount=float(m["amount"]),
         is_foreign_merchant=m["is_foreign_merchant"],
         location=m["location"],
+        original_currency=m["original_currency"],
+        original_amount=(
+            float(m["original_amount"]) if m["original_amount"] is not None else None
+        ),
         status=m["status"],
         timestamp=m["timestamp"],
         created_at=m["created_at"],

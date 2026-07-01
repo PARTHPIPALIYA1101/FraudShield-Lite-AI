@@ -9,6 +9,12 @@ The LLM layer is **provider-agnostic**: it runs on Google Gemini by default and
 swaps to Anthropic Claude with a single `.env` flag. No downstream code names a
 vendor.
 
+Access is gated by a lightweight email/password **login** — each account claims a
+unique `user_id` that pre-fills the transaction submitter. Amounts can be entered
+in **any currency** (converted to USD at submit via live FX rates, with the original
+currency/amount preserved for display), and every transaction time renders in a
+**user-selectable timezone** you pick from a searchable list.
+
 ---
 
 ## Table of contents
@@ -52,13 +58,19 @@ vendor.
                                   ┌─────────────▼──┐  ┌──────▼──────┐  ▼
                                   │     Redis      │  │  LLM (AI)   │ ┌──────────┐
                                   │ velocity/dedup │  │  Gemini /   │ │ Postgres │
-                                  │ context/cache  │  │  Claude     │ │  5 tables│
+                                  │ context/cache  │  │  Claude     │ │  6 tables│
                                   │ feedback summ. │  └─────────────┘ └──────────┘
                                   └────────────────┘
 ```
 
 **Request lifecycle**
 
+0. A visitor **signs up / logs in** (`POST /auth/signup` or `/auth/login`). Signup
+   claims a unique `user_id` alongside a unique email + hashed password; login
+   returns that `user_id`. The dashboard is gated until authenticated, and the
+   account's `user_id` pre-fills (read-only) the submitter. The client also converts
+   any entered currency to USD before this call, sending the canonical USD `amount`
+   plus the original `currency`/`amount` for display.
 1. `POST /transactions` → persist raw row (Postgres, `status=SCORING`), publish to
    `transactions.raw` keyed by `user_id`, return `202` immediately. Each POST is a
    distinct event (no content dedup); idempotency is at the `transaction_id` level.
@@ -97,6 +109,18 @@ vendor.
 
 ## Features
 
+- **Email/password auth gate** — signup claims a **unique email + unique user ID**;
+  passwords are hashed with PBKDF2-SHA256 (per-user salt, stdlib — no plaintext).
+  Login returns the account's `user_id`, which pre-fills (read-only) the transaction
+  submitter. Session persists client-side; a login *gate* + identity source (see
+  [Design decisions](#design-decisions) for the security boundary).
+- **Multi-currency entry → USD** — pick a currency, type an amount; the client
+  converts to USD at submit using **live FX rates**, and the original currency +
+  amount are stored so the detail drawer shows e.g. `₹8500 INR → $89.76`. Zero /
+  negative amounts are rejected (`amount > 0`, enforced on the API).
+- **User-selectable display timezone** — a searchable IANA-timezone picker (default
+  IST) reformats **every** transaction time across the dashboard, live-synced; the
+  submitter shows a ticking clock in the selected zone.
 - **Real-time scoring pipeline** — Kafka decouples ingestion from scoring; per-user
   keying preserves ordering for velocity state.
 - **LLM fraud assessment** — structured JSON output: score, decision band
@@ -142,8 +166,11 @@ vendor.
 docker compose up -d        # Kafka, Zookeeper, Postgres, Redis, Kafka UI
 docker compose ps           # all should be "healthy"
 ```
-Postgres auto-runs `backend/db/init.sql` on first boot (creates the 5 tables); the
-backend also applies idempotent migrations on startup. Kafka UI is at http://localhost:8080.
+Postgres auto-runs `backend/db/init.sql` on first boot (creates the 6 tables —
+transactions, fraud_results, analyst_feedback, transaction_audit, ai_chat_sessions,
+**users**); the backend also applies idempotent migrations on startup (which add the
+`users` table and the `transactions.original_currency/original_amount` columns to an
+existing DB). Kafka UI is at http://localhost:8080.
 
 ### 2. Backend
 ```bash
@@ -162,8 +189,10 @@ npm install                 # ⚠️ see Troubleshooting if this errors with EAL
 npm run dev                 # http://localhost:3000
 ```
 
-Open http://localhost:3000, click a preset in **Submit Transaction**, and watch it
-score live in the feed.
+Open http://localhost:3000 → **Sign up** (email + a unique user ID + password ≥ 8
+chars), or **Sign in** if you already have an account. Once in, your user ID
+pre-fills the submitter; pick a currency + timezone, click a preset in **Submit
+Transaction**, and watch it score live in the feed.
 
 ---
 
@@ -219,7 +248,9 @@ analyst — it does not complete the payment. `transactions.status` (the state) 
 | Method | Path | Purpose |
 |--------|------|---------|
 | `GET`  | `/health` | Per-dependency liveness (kafka/db/redis/ai) |
-| `POST` | `/transactions` | Ingest a transaction → `202 {transaction_id, status}` |
+| `POST` | `/auth/signup` | Create an account (unique email + user_id) → `201 {email, user_id}`; **409** if either is taken |
+| `POST` | `/auth/login` | Verify credentials → `200 {email, user_id}`; **401** on bad credentials |
+| `POST` | `/transactions` | Ingest a transaction (USD `amount` + original `currency`/`amount`) → `202 {transaction_id, status}` |
 | `GET`  | `/transactions` | Paginated list, `?status=` (and `?decision=`) filter |
 | `GET`  | `/transactions/{id}` | Transaction + status + assessment + feedback + **audit timeline** |
 | `POST` | `/transactions/{id}/confirm` | USER "Continue Anyway" → PENDING_ANALYST_REVIEW |
@@ -271,6 +302,19 @@ audit row, and broadcast the new state over the WebSocket.
   is silently dropped.
 - **Raw SQL over ORM models.** The schema is owned by `init.sql` and payloads are
   JSONB blobs from the LLM; a thin async Core layer avoids ORM drift.
+- **Auth is a login gate + identity source, not endpoint authorization.** Signup/login
+  validate credentials (PBKDF2-SHA256 hashes, uniqueness on email *and* `user_id`) and
+  the frontend gates the dashboard + pre-fills the submitter — but the transaction
+  endpoints themselves are not token-protected in this demo. Adding per-request
+  JWT/session enforcement is a clean follow-up; the boundary is deliberately explicit.
+- **USD is the canonical amount; original currency is display-only.** The client
+  converts to USD with live FX rates and submits the USD `amount`, so all scoring,
+  stats, and thresholds operate on one unit. `transactions.original_currency` /
+  `original_amount` preserve what the user typed for the detail view; `amount > 0`
+  is enforced at the API so a $0 event can't enter the pipeline.
+- **Display timezone is a client concern.** Timestamps are stored in UTC
+  (`TIMESTAMPTZ`); the selected IANA zone only affects rendering (via `Intl`), so the
+  same event reads correctly in any zone without touching stored data.
 
 ---
 

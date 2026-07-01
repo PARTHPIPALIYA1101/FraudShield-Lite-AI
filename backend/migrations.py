@@ -10,6 +10,18 @@ logger = logging.getLogger("fraudshield.migrations")
 
 # Each entry is one idempotent DDL/backfill statement, run in order on every boot.
 _STATEMENTS: list[str] = [
+    # users — login/signup accounts (unique email + unique claimed user_id).
+    """
+    CREATE TABLE IF NOT EXISTS users (
+        id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        email          VARCHAR(255) NOT NULL,
+        user_id        VARCHAR(50)  NOT NULL,
+        password_hash  TEXT         NOT NULL,
+        created_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+        CONSTRAINT uq_users_email   UNIQUE (email),
+        CONSTRAINT uq_users_user_id UNIQUE (user_id)
+    )
+    """,
     # transactions.status (the state machine)
     """
     ALTER TABLE transactions
@@ -33,6 +45,15 @@ _STATEMENTS: list[str] = [
     """
     CREATE INDEX IF NOT EXISTS idx_transactions_status
         ON transactions (status, created_at DESC)
+    """,
+    # Original (pre-conversion) currency + amount the user entered, for display.
+    """
+    ALTER TABLE transactions
+        ADD COLUMN IF NOT EXISTS original_currency VARCHAR(3) DEFAULT 'USD'
+    """,
+    """
+    ALTER TABLE transactions
+        ADD COLUMN IF NOT EXISTS original_amount DECIMAL(12, 2)
     """,
     # transaction_audit (transition ledger)
     """

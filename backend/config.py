@@ -5,7 +5,6 @@ from functools import lru_cache
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
 class Settings(BaseSettings):
     """All runtime configuration, loaded from environment / backend/.env."""
 
@@ -56,11 +55,9 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-
 @lru_cache
 def get_settings() -> Settings:
     """Cached accessor so the .env file is parsed exactly once per process."""
     return Settings()
-
 
 settings = get_settings()

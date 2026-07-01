@@ -73,9 +73,15 @@ class TransactionCreate(BaseModel):
 
     user_id: str = Field(..., min_length=1, max_length=50, examples=["user_123"])
     merchant: str = Field(..., min_length=1, max_length=100, examples=["Amazon"])
-    amount: float = Field(..., ge=0, examples=[100.0])
+    # amount is ALWAYS in USD — the client converts before submitting. The two
+    # original_* fields preserve what the user actually entered, for display.
+    amount: float = Field(..., gt=0, examples=[100.0])  # a real txn must move money
     is_foreign_merchant: bool = Field(default=False)
-    location: Optional[str] = Field(default=None, max_length=100, examples=["Mumbai, IN"])
+    location: Optional[str] = Field(default=None, max_length=100, examples=["Asia/Kolkata"])
+    original_currency: Optional[str] = Field(
+        default="USD", min_length=3, max_length=3, examples=["INR"]
+    )
+    original_amount: Optional[float] = Field(default=None, gt=0, examples=[8500.0])
 
     @field_validator("user_id", "merchant")
     @classmethod
@@ -84,6 +90,55 @@ class TransactionCreate(BaseModel):
         if not v:
             raise ValueError("must not be blank")
         return v
+
+    @field_validator("original_currency")
+    @classmethod
+    def _normalize_currency(cls, v: Optional[str]) -> Optional[str]:
+        return v.strip().upper() if v else v
+
+
+class SignupRequest(BaseModel):
+    """POST /auth/signup body — claim an account with a unique email + user_id."""
+
+    email: str = Field(..., min_length=3, max_length=255, examples=["a@b.com"])
+    password: str = Field(..., min_length=8, max_length=200)
+    user_id: str = Field(..., min_length=1, max_length=50, examples=["parth_01"])
+
+    @field_validator("email")
+    @classmethod
+    def _normalize_email(cls, v: str) -> str:
+        v = v.strip().lower()
+        # Deliberately light validation — one @ with text on both sides.
+        if v.count("@") != 1 or v.startswith("@") or v.endswith("@") or "." not in v.split("@")[1]:
+            raise ValueError("invalid email address")
+        return v
+
+    @field_validator("user_id")
+    @classmethod
+    def _strip_user_id(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("must not be blank")
+        return v
+
+
+class LoginRequest(BaseModel):
+    """POST /auth/login body."""
+
+    email: str = Field(..., min_length=3, max_length=255)
+    password: str = Field(..., min_length=1, max_length=200)
+
+    @field_validator("email")
+    @classmethod
+    def _normalize_email(cls, v: str) -> str:
+        return v.strip().lower()
+
+
+class AuthUserOut(BaseModel):
+    """Public account view returned by signup/login (never includes the hash)."""
+
+    email: str
+    user_id: str
 
 
 class FeedbackCreate(BaseModel):
@@ -157,9 +212,11 @@ class TransactionOut(BaseModel):
     id: UUID
     user_id: str
     merchant: str
-    amount: float
+    amount: float                       # canonical USD amount
     is_foreign_merchant: bool
     location: Optional[str]
+    original_currency: Optional[str] = None
+    original_amount: Optional[float] = None
     status: TransactionStatus
     timestamp: datetime
     created_at: datetime

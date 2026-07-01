@@ -5,14 +5,36 @@
 import { useEffect, useState } from "react";
 
 import { AIAnalystChat } from "@/components/AIAnalystChat";
+import { AuthScreen } from "@/components/AuthScreen";
 import { StatsCards } from "@/components/StatsCards";
+import { TimezoneSelect } from "@/components/TimezoneSelect";
 import { TransactionDrawer } from "@/components/TransactionDrawer";
 import { TransactionFeed } from "@/components/TransactionFeed";
 import { TransactionForm } from "@/components/TransactionForm";
 import { getHealth } from "@/lib/api";
+import { AuthProvider, useAuth } from "@/lib/auth";
+import { TimezoneProvider, useTimezone } from "@/lib/timezone";
 import type { Health } from "@/lib/types";
 
 export default function DashboardPage() {
+  return (
+    <AuthProvider>
+      <TimezoneProvider>
+        <AuthGate />
+      </TimezoneProvider>
+    </AuthProvider>
+  );
+}
+
+/** Show the login/signup screen until authenticated, then the dashboard. */
+function AuthGate() {
+  const { user, ready } = useAuth();
+  if (!ready) return null; // brief: reading persisted session
+  if (!user) return <AuthScreen />;
+  return <Dashboard />;
+}
+
+function Dashboard() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -31,7 +53,11 @@ export default function DashboardPage() {
             FraudShield <span className="text-white/40">Lite AI</span>
           </h1>
         </div>
-        <HealthIndicator />
+        <div className="flex items-center gap-4">
+          <DisplayTimezoneControl />
+          <HealthIndicator />
+          <UserMenu />
+        </div>
       </header>
 
       {/* Body */}
@@ -65,6 +91,40 @@ export default function DashboardPage() {
         transactionId={selectedId}
         onClose={() => setSelectedId(null)}
         onActionDone={() => setRefreshKey((k) => k + 1)}
+      />
+    </div>
+  );
+}
+
+/** Signed-in identity + logout, in the header. */
+function UserMenu() {
+  const { user, logout } = useAuth();
+  if (!user) return null;
+  return (
+    <div className="flex items-center gap-2 text-xs">
+      <span className="hidden text-white/50 sm:inline" title={user.email}>
+        {user.user_id}
+      </span>
+      <button
+        onClick={logout}
+        className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-white/70 transition-colors hover:border-white/25 hover:text-white/90"
+      >
+        Log out
+      </button>
+    </div>
+  );
+}
+
+/** Global display-timezone picker — every transaction time re-renders in this zone. */
+function DisplayTimezoneControl() {
+  const { tz, setTz } = useTimezone();
+  return (
+    <div className="flex items-center gap-2">
+      <span className="hidden text-xs text-white/40 sm:inline">Timezone</span>
+      <TimezoneSelect
+        value={tz}
+        onChange={setTz}
+        className="w-52"
       />
     </div>
   );

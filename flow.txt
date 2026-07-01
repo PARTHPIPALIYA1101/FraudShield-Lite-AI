@@ -1,0 +1,266 @@
+============================================================================
+FraudShield Lite AI — Learning Path
+Read the codebase in this order. Each entry is "file → why read it here".
+============================================================================
+
+How to use this file
+  - Go top to bottom. Every stage builds on the ones before it.
+  - Backend first (stages 0–4), then frontend (stages 5–6).
+  - "→" tells you what that file teaches and how it connects to the others.
+  - The end-to-end trace at the bottom ties it together once you've read the files.
+
+The system in one sentence
+  A transaction is submitted over REST → queued on Kafka → a consumer enriches it
+  with Redis behavioral context → an LLM scores it → the result is persisted to
+  Postgres and its lifecycle status advances → every change is pushed to the
+  Next.js dashboard over WebSocket. A login gate fronts the dashboard; amounts are
+  entered in any currency (converted to USD) and times render in a chosen timezone.
+
+
+----------------------------------------------------------------------------
+Stage 0 — Orient yourself (read first, don't skip)
+----------------------------------------------------------------------------
+  1  README.md
+       → The whole system on one page: architecture diagram, request lifecycle,
+         features, API reference, design decisions. Your map — start here.
+
+  2  BUILD_PROGRESS.md
+       → Phase-by-phase build log: why each file exists and the order it was built.
+         Mirrors this learning flow.
+
+  3  docker-compose.yml
+       → The 5 backing services (Kafka, Zookeeper, Postgres, Redis, Kafka-UI) and
+         how they wire together. Everything else assumes these are running.
+
+
+----------------------------------------------------------------------------
+Stage 1 — Backend foundation (config, DB, schema, contracts)
+----------------------------------------------------------------------------
+  These define the "nouns" of the system. Read before any logic.
+
+  4  backend/.env.example
+       → Every tunable: LLM_PROVIDER, API keys, DB/Redis/Kafka URLs, TTLs,
+         NEW_USER_AMOUNT_LIMIT.
+
+  5  backend/config.py
+       → Typed/validated settings (Pydantic). How .env becomes app config, and the
+         provider switch (gemini | anthropic).
+
+  6  backend/db/init.sql
+       → The 6 tables: transactions, fraud_results, analyst_feedback,
+         transaction_audit, ai_chat_sessions, and users (the login accounts).
+         Note transactions.amount is canonical USD, with original_currency /
+         original_amount kept for display. The data model is the backbone.
+
+  7  backend/db.py
+       → Async SQLAlchemy 2.0 Core engine + session factory (thin raw-SQL layer,
+         no ORM models). How every query runs.
+
+  8  backend/migrations.py
+       → Idempotent startup migrations: the status column + transaction_audit, the
+         users table, and the transactions.original_currency/original_amount
+         columns — so an existing DB upgrades in place.
+
+  9  backend/models.py
+       → Pydantic schemas — the request/response contracts and enums
+         (TransactionStatus, decision bands, Actor). Includes the auth models
+         (Signup/Login/AuthUserOut) and TransactionCreate (amount > 0, currency
+         fields). This is the shared contract between backend and frontend.
+
+ 10  backend/auth.py
+       → Password hashing/verification with stdlib PBKDF2-SHA256 (per-user salt,
+         constant-time compare). No plaintext, no extra dependencies.
+
+
+----------------------------------------------------------------------------
+Stage 2 — State & infrastructure helpers
+----------------------------------------------------------------------------
+ 11  backend/redis_client.py
+       → Behavioral context: velocity counters, running average (Welford), usual
+         merchants, feedback summaries, dedup/fingerprint claims. All fail-soft.
+
+ 12  backend/transaction_state.py
+       → The lifecycle state machine: transition rules, guards, the audited
+         apply_transition(), and the WS event builder. "AI recommends, humans
+         decide" lives here.
+
+ 13  backend/policy.py
+       → Deterministic guardrails applied AFTER the LLM (e.g. the new-user amount
+         limit) — hard rules the model can't override.
+
+
+----------------------------------------------------------------------------
+Stage 3 — The AI scoring layer (the heart)
+----------------------------------------------------------------------------
+  Read ai/ as a unit — a clean provider-agnostic design.
+
+ 14  backend/ai/base.py
+       → The Scorer protocol + shared primitives (the "shape" downstream code
+         depends on, not a vendor).
+
+ 15  backend/ai/prompt_builder.py
+       → How context + transaction become a calibrated prompt (system prompt +
+         few-shot anchoring so normal purchases approve, real fraud declines).
+
+ 16  backend/ai/response_parser.py
+       → Parses the LLM's raw text into a FraudAssessment; never raises — bad
+         output fails safe to REVIEW.
+
+ 17  backend/ai/cache_manager.py
+       → Redis cache for the assessment, keyed on transaction_id (idempotency on
+         retry, NOT content dedup — read its commentary).
+
+ 18  backend/ai/gemini_scorer.py
+       → The active provider (Google Gemini, native JSON mode).
+
+ 19  backend/ai/claude_scorer.py
+       → The alternate provider (Anthropic) — same protocol, proves the abstraction.
+
+ 20  backend/ai/scorer_factory.py
+       → Resolves the active scorer at runtime from LLM_PROVIDER (lazy, memoized).
+
+ 21  backend/ai/chat.py
+       → Provider-agnostic streaming chat for the "AI Analyst" assistant.
+
+ 22  backend/ai/__init__.py
+       → Package wiring/exports for the ai/ layer.
+
+
+----------------------------------------------------------------------------
+Stage 4 — The pipeline (where it all connects)
+----------------------------------------------------------------------------
+ 23  backend/kafka_producer.py
+       → Topic bootstrap + publishing keyed by user_id (per-user ordering).
+
+ 24  backend/kafka_consumer.py
+       → The core loop: poll transactions.raw → build context → score → DB upsert →
+         advance status → WS broadcast. Read after stages 1–3.
+
+ 25  backend/websocket_manager.py
+       → Fan-out hub for /ws/alerts; prunes dead sockets on failed send.
+
+ 26  backend/main.py
+       → The FastAPI app — lifespan (creates topics + launches the consumer) and
+         ALL routes: /auth/signup + /auth/login, /transactions and the four state
+         actions, /feedback, /chat, /stats, /health, /ws/alerts. Read last on the
+         backend, once every import is familiar. The conductor.
+
+
+----------------------------------------------------------------------------
+Stage 5 — Frontend foundation (config + lib)
+----------------------------------------------------------------------------
+ 27  frontend/.env.local  +  frontend/package.json
+       → API/WS URLs; the Next.js 16 / React 19 / Tailwind v4 stack.
+
+ 28  frontend/lib/types.ts
+       → TS mirror of models.py + the WS broadcast shape. Includes AuthUser and the
+         original-currency fields. Read alongside backend/models.py.
+
+ 29  frontend/lib/api.ts
+       → Single fetch wrapper + typed REST fns (signup/login, transactions, state
+         actions, feedback), streamChat(), and wsAlertsUrl().
+
+ 30  frontend/lib/format.ts
+       → Currency/percent/latency/relative-time formatters, decision→color maps,
+         and the timezone renderers (formatInZone / formatShortInZone / formatIST).
+
+ 31  frontend/lib/currency.ts
+       → Live USD FX rates (cached) + convertToUSD(): the client converts an entered
+         currency to USD before submitting.
+
+ 32  frontend/lib/geo.ts
+       → Curated location → IANA-timezone list (and IST default).
+
+ 33  frontend/lib/timezone.tsx
+       → Global display-timezone React context (persisted to localStorage). One
+         selected zone reformats every transaction time on the dashboard.
+
+ 34  frontend/lib/auth.tsx
+       → Auth session React context (persisted to localStorage): user, login(),
+         signup(), logout(). This is what gates the dashboard.
+
+ 35  frontend/lib/hooks/useWebSocket.ts
+       → Live alert subscription with backoff reconnect (feeds the transaction list).
+
+
+----------------------------------------------------------------------------
+Stage 6 — Frontend UI (shell, then components)
+----------------------------------------------------------------------------
+  Read the shell first to see how everything is mounted, then each component.
+
+ 36  frontend/app/layout.tsx
+       → Root HTML shell (fonts, global CSS). The outermost wrapper.
+
+ 37  frontend/app/page.tsx
+       → The dashboard shell: AuthProvider + TimezoneProvider, the login GATE
+         (AuthScreen until signed in), header (timezone picker + user menu), the
+         KPI row, and the 3-pane work area (form · feed · chat) + detail drawer.
+         Read this to see how the pieces below fit together.
+
+ 38  frontend/components/AuthScreen.tsx
+       → The full-screen sign in / sign up gate (email + password; signup also
+         claims a unique user_id). Shown until authenticated.
+
+ 39  frontend/components/TimezoneSelect.tsx
+       → Searchable IANA-timezone combobox (type to filter). Used by the header and
+         the submit form, both bound to the shared timezone.
+
+ 40  frontend/components/StatsCards.tsx
+       → The KPI row backed by GET /stats (polled; skeleton + non-destructive error).
+
+ 41  frontend/components/TransactionForm.tsx
+       → Submit a transaction: presets + fields, the currency dropdown with a live
+         USD preview, the read-only account user_id, the shared timezone picker with
+         a live clock, and the amount > 0 guard.
+
+ 42  frontend/components/TransactionFeed.tsx
+       → The live list: REST poll + WS updates merged by id; primary axis = status.
+         Times render in the selected timezone.
+
+ 43  frontend/components/TransactionDrawer.tsx
+       → Right-side detail panel: status, facts (amount shows "₹8500 INR → $89.76",
+         time in the selected zone), the AI assessment, action controls, audit.
+
+ 44  frontend/components/StatusBadge.tsx
+       → Colored pill for a transaction's lifecycle status (used across the UI).
+
+ 45  frontend/components/ActionButtons.tsx
+       → Status-driven decision controls: confirm/cancel (user), approve/reject
+         (analyst) → the state-action endpoints.
+
+ 46  frontend/components/FeedbackButtons.tsx
+       → Analyst labels a scored txn (CONFIRMED_FRAUD / FALSE_POSITIVE) → the
+         no-retraining feedback loop.
+
+ 47  frontend/components/AIScoreCard.tsx
+       → Renders one fraud assessment in full (score, decision, risk factors,
+         explanation).
+
+ 48  frontend/components/AuditTimeline.tsx
+       → Vertical timeline of a transaction's state transitions (the audit ledger).
+
+ 49  frontend/components/AIAnalystChat.tsx
+       → Streaming chat with the AI fraud-analyst assistant (POST /chat; pinned
+         transactions become grounding context).
+
+
+----------------------------------------------------------------------------
+End-to-end trace (read after the files — the runtime path)
+----------------------------------------------------------------------------
+  1. Visitor hits the site → page.tsx sees no auth session (lib/auth.tsx) →
+     AuthScreen. Sign up / sign in → POST /auth/signup | /auth/login (main.py →
+     auth.py → users table). The account's user_id is stored client-side.
+  2. In the form (TransactionForm) the user picks a currency + timezone, enters an
+     amount → lib/currency.ts converts it to USD → POST /transactions (api.ts).
+  3. main.py persists the row (status=SCORING) + publishes to Kafka
+     (kafka_producer.py), keyed by user_id, and returns 202.
+  4. kafka_consumer.py polls the message → builds context (redis_client.py) →
+     scores it (ai/scorer_factory → gemini_scorer → prompt_builder / response_parser,
+     with ai/cache_manager for retries) → UPSERTs fraud_results.
+  5. The AI recommendation advances transactions.status via transaction_state.py
+     (guarded + audited), and policy.py applies any hard overrides.
+  6. websocket_manager.py broadcasts the change → useWebSocket.ts → the feed and
+     drawer update live; times render in the chosen timezone.
+  7. A human confirms/cancels (user) or approves/rejects (analyst) via
+     ActionButtons → the state endpoints → another audited transition + broadcast.
+============================================================================

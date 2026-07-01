@@ -21,6 +21,40 @@ export function formatLatency(ms: number): string {
   return `${Math.round(ms)}ms`;
 }
 
+/** Format an instant in a given IANA timezone (date + time, e.g. "Jul 1, 2026, 9:05:30 PM"). */
+export function formatInZone(iso: string | number | Date, tz: string): string {
+  const d = iso instanceof Date ? iso : new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  }).format(d);
+}
+
+/** Compact time-of-day in a zone (e.g. "9:05 PM") for dense rows. */
+export function formatShortInZone(iso: string | number | Date, tz: string): string {
+  const d = iso instanceof Date ? iso : new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(d);
+}
+
+/** Same instant rendered in Indian Standard Time, tagged "IST". */
+export function formatIST(iso: string | number | Date): string {
+  const s = formatInZone(iso, "Asia/Kolkata");
+  return s ? `${s} IST` : "";
+}
+
 /** Relative time like "12s ago", "5m ago" from an ISO timestamp. */
 export function formatRelativeTime(iso: string): string {
   const then = new Date(iso).getTime();
