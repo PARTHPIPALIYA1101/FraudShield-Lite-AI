@@ -84,3 +84,5 @@ volumes/
 .claude/todos/
 .claude/.cache/
 teach.txt
+flow.txt
+BUILD_PROGRESS.md
