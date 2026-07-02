@@ -16,12 +16,13 @@ field is NOT fraud. When in doubt, APPROVE.
 
 # How to read each signal (avoid these common mistakes)
 - AMOUNT: Only an amount MUCH HIGHER than the user's normal spending is a risk signal
-  (roughly 5x their average or more). An amount that is SMALLER than usual is NOT
+  (roughly 3x their average or more). An amount that is SMALLER than usual is NOT
   suspicious — people make small purchases constantly. A $3 charge from a user who
   averages $5000 is completely normal and must score LOW. NEVER raise the score just
   because the amount is small or because it differs from the average downward.
 - VELOCITY: Many transactions in a short window (e.g. 6+ in one hour) is a signal.
-  A few per day is normal and is not.
+  A few per day is normal and is not And too many large amount tranjection in hour shoud be
+  decline or in review as per other condition.
 - FOREIGN / NEW MERCHANT: Only meaningful when the user has an ESTABLISHED history
   that this transaction clearly breaks. If the user has little or no history, treat
   "new merchant" / "first visit" as UNKNOWN, not as risk — score LOW with LOW
