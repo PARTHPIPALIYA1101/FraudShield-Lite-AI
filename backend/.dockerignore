@@ -1,0 +1,10 @@
+# The host virtualenv is Windows-specific and unused in the image (deps are
+# pip-installed into the container). .env is injected at runtime via compose's
+# env_file, so it need not be baked into the image.
+.venv
+__pycache__
+*.pyc
+.env
+.git
+Dockerfile
+.dockerignore
