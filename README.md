@@ -103,7 +103,7 @@ currency/amount preserved for display), and every transaction time renders in a
 | Streaming    | Apache Kafka (confluent-kafka), Zookeeper |
 | Datastore    | PostgreSQL (asyncpg), Redis (redis-py async) |
 | AI           | Google Gemini (`google-generativeai`) · Anthropic Claude (`anthropic`) — swappable |
-| Infra        | Docker Compose (Kafka, ZK, Postgres, Redis, Kafka UI) |
+| Infra        | Docker Compose (Kafka, ZK, Postgres, Redis, Kafka UI, backend, frontend, Nginx) |
 
 ---
 
@@ -161,9 +161,51 @@ currency/amount preserved for display), and every transaction time renders in a
 
 ## Quick start
 
-### 1. Infrastructure
+There are two ways to run FraudShield: **Option A** boots the *entire* stack —
+infra **plus** the backend, frontend, and an Nginx front door — with one command
+(great for a demo). **Option B** runs the app processes on the host for
+hot-reloading dev.
+
+Either way, first drop your LLM key into `backend/.env`
+(`GOOGLE_API_KEY=…`, `LLM_PROVIDER=gemini`) — copy `backend/.env.example` if you
+don't have one yet.
+
+### Option A — one command (full stack in Docker) 🚀
+
 ```bash
-docker compose up -d        # Kafka, Zookeeper, Postgres, Redis, Kafka UI
+docker compose up -d --build   # infra + backend + frontend + Nginx
+docker compose ps              # everything should be "healthy"/"running"
+```
+
+Then open **http://localhost** — that's it. Nginx (port 80) is the single front
+door: it serves the Next.js frontend at `/` and reverse-proxies every `/api/…`
+call (REST **and** the `/api/ws/alerts` WebSocket) to the backend, so the browser
+talks to one origin with no CORS and no per-service ports to juggle.
+
+| URL | What |
+|-----|------|
+| http://localhost | Dashboard (Nginx → frontend) |
+| http://localhost/api/health | Backend health (Nginx → backend) |
+| http://localhost/api/docs | API docs |
+| http://localhost:8080 | Kafka UI |
+
+Useful commands:
+```bash
+docker compose logs -f backend frontend   # tail app logs
+docker compose up -d --build frontend      # rebuild just the frontend after a change
+docker compose down                         # stop (keep data)
+docker compose down -v                      # stop + wipe Postgres/Redis volumes
+```
+
+> The `NEXT_PUBLIC_*` URLs are baked into the client bundle at **build** time
+> (from `frontend/.env.local`, which already points the client at `/api`), so
+> after changing frontend code re-run with `--build`.
+
+### Option B — host dev (hot reload)
+
+**1. Infrastructure only**
+```bash
+docker compose up -d zookeeper kafka postgres redis kafka-ui
 docker compose ps           # all should be "healthy"
 ```
 Postgres auto-runs `backend/db/init.sql` on first boot (creates the 6 tables —
@@ -172,7 +214,7 @@ transactions, fraud_results, analyst_feedback, transaction_audit, ai_chat_sessio
 `users` table and the `transactions.original_currency/original_amount` columns to an
 existing DB). Kafka UI is at http://localhost:8080.
 
-### 2. Backend
+**2. Backend**
 ```bash
 cd backend
 # set your key in .env:  GOOGLE_API_KEY=...   (LLM_PROVIDER=gemini)
@@ -182,10 +224,12 @@ cd backend
 The app creates the Kafka topics and launches the scoring consumer on startup.
 Health: http://localhost:8000/health · API docs: http://localhost:8000/docs
 
-### 3. Frontend
+**3. Frontend**
 ```bash
 cd frontend
 npm install                 # ⚠️ see Troubleshooting if this errors with EALLOWSCRIPTS
+# for host dev, point the client straight at the backend (bypassing Nginx):
+#   NEXT_PUBLIC_API_URL=http://localhost:8000  NEXT_PUBLIC_WS_URL=ws://localhost:8000
 npm run dev                 # http://localhost:3000
 ```
 
@@ -212,8 +256,12 @@ All backend config is in `backend/.env` (typed/validated by `config.py`):
 | `NEW_USER_AMOUNT_LIMIT` | `100.0` | new users (no history) can't be auto-approved above this |
 | `*_TTL_SECONDS` | — | dedup / cache / velocity windows |
 
-Frontend config is in `frontend/.env.local`:
-`NEXT_PUBLIC_API_URL=http://localhost:8000`, `NEXT_PUBLIC_WS_URL=ws://localhost:8000`.
+Frontend config is in `frontend/.env.local` and is **inlined at build time**
+(`NEXT_PUBLIC_*`). It ships pointing at the Nginx front door
+(`NEXT_PUBLIC_API_URL=/api`, `NEXT_PUBLIC_WS_URL=/api`) so the full-stack Docker
+run (Option A) works out of the box. For host dev against a bare backend, set
+them to `http://localhost:8000` / `ws://localhost:8000`. Relative values are
+resolved against the page origin for the WebSocket (`lib/api.ts` → `wsAlertsUrl`).
 
 **Switching to Claude:** set `LLM_PROVIDER=anthropic` + a valid key + base URL.
 No code changes — the scorer and chat layers resolve the provider at runtime.
@@ -315,6 +363,11 @@ audit row, and broadcast the new state over the WebSocket.
 - **Display timezone is a client concern.** Timestamps are stored in UTC
   (`TIMESTAMPTZ`); the selected IANA zone only affects rendering (via `Intl`), so the
   same event reads correctly in any zone without touching stored data.
+- **One origin behind Nginx.** In the full-stack Docker run, an Nginx reverse
+  proxy (`nginx/default.conf`) is the only exposed HTTP port (`:80`): it serves the
+  frontend at `/` and strips the `/api` prefix off REST + WebSocket traffic to the
+  backend. The client is built with relative `/api` URLs, so there's no CORS and no
+  hard-coded host — the same bundle works wherever it's deployed.
 
 ---
 
