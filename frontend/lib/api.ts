@@ -29,6 +29,27 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Turn a FastAPI error body into a readable string.
+ * `detail` is a plain string for HTTPException (401/404/409/503), but a
+ * Pydantic 422 sends an ARRAY of {loc, msg, type} objects — rendering that
+ * directly is what produced the "[object Object]" message on a bad email.
+ */
+function extractDetail(body: unknown): string | null {
+  if (!body || typeof body !== "object") return null;
+  const detail = (body as { detail?: unknown }).detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    const msgs = detail
+      .map((e) => (e && typeof e === "object" ? (e as { msg?: string }).msg : null))
+      .filter((m): m is string => Boolean(m))
+      // Pydantic prefixes value_error messages with "Value error, "; drop it.
+      .map((m) => m.replace(/^Value error,\s*/i, ""));
+    if (msgs.length) return msgs.join("; ");
+  }
+  return null;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
@@ -36,11 +57,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!res.ok) {
-    // FastAPI errors are {detail: "..."}; fall back to status text.
+    // FastAPI errors are {detail: ...}; fall back to status text.
     let detail = res.statusText;
     try {
       const body = await res.json();
-      if (body?.detail) detail = body.detail;
+      detail = extractDetail(body) ?? detail;
     } catch {
       /* non-JSON error body — keep statusText */
     }
@@ -170,4 +191,18 @@ export async function streamChat(
 }
 
 // WebSocket.
-export const wsAlertsUrl = () => `${WS_URL}/ws/alerts`;
+// WS_URL may be absolute ("ws://localhost:8000", local dev) or a relative path
+// ("/api", the nginx-proxied Docker setup). The browser's WebSocket constructor
+// requires an ABSOLUTE ws://|wss:// URL, so resolve a relative value against the
+// current page origin (mapping http→ws / https→wss).
+export function wsAlertsUrl(): string {
+  const path = "/ws/alerts";
+  if (/^wss?:\/\//i.test(WS_URL)) return `${WS_URL}${path}`;
+  if (typeof window !== "undefined") {
+    const scheme = window.location.protocol === "https:" ? "wss" : "ws";
+    // WS_URL like "/api" (or "") becomes ws://host/api/ws/alerts.
+    const base = WS_URL.replace(/\/+$/, "");
+    return `${scheme}://${window.location.host}${base}${path}`;
+  }
+  return `${WS_URL}${path}`; // SSR fallback (socket only opens client-side)
+}
