@@ -70,11 +70,11 @@ Other backend modules: `auth.py`, `policy.py`, `transaction_state.py`,
 |------------------|-----------------------|----------|-------|
 | Framework        | Next.js (App Router)  | 16.2.9   | `app/` directory. |
 | UI library       | React                 | 19.2.4   | With `react-dom` 19.2.4. |
-| Language         | TypeScript            | ^5       | `tsconfig.json`. |
+| Language         | JavaScript (ESM)      | ES2020+  | `jsconfig.json` for the `@/*` path alias. |
 | Styling          | Tailwind CSS          | ^4       | Via `@tailwindcss/postcss`. |
 | Linting          | ESLint                | ^9       | `eslint-config-next` 16.2.9. |
 
-Real-time updates via a WebSocket hook (`lib/hooks/useWebSocket.ts`).
+Real-time updates via a WebSocket hook (`lib/hooks/useWebSocket.js`).
 Key components: `TransactionFeed`, `AIAnalystChat`, `AIScoreCard`,
 `AuditTimeline`, `TransactionForm`, `AuthScreen`.
 

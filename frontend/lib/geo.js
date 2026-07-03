@@ -1,12 +1,7 @@
 // Selectable transaction locations, each carrying an IANA timezone so the form
 // can show the location's live local time and its IST equivalent.
 
-export interface GeoLocation {
-  label: string; // stored verbatim as transaction.location
-  tz: string; // IANA timezone id
-}
-
-export const LOCATIONS: GeoLocation[] = [
+export const LOCATIONS = [
   { label: "Mumbai, IN", tz: "Asia/Kolkata" },
   { label: "Delhi, IN", tz: "Asia/Kolkata" },
   { label: "New York, US", tz: "America/New_York" },
@@ -21,6 +16,6 @@ export const LOCATIONS: GeoLocation[] = [
 
 export const IST_TZ = "Asia/Kolkata";
 
-export function tzForLocation(label: string | null | undefined): string {
+export function tzForLocation(label) {
   return LOCATIONS.find((l) => l.label === label)?.tz ?? IST_TZ;
 }

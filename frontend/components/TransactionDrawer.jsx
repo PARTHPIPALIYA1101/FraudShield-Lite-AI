@@ -8,19 +8,11 @@ import { getTransaction } from "@/lib/api";
 import { currencySymbol } from "@/lib/currency";
 import { formatCurrency, formatInZone, formatRelativeTime } from "@/lib/format";
 import { useTimezone } from "@/lib/timezone";
-import type { TransactionWithResult } from "@/lib/types";
 import { AIScoreCard } from "./AIScoreCard";
 import { ActionButtons } from "./ActionButtons";
 import { AuditTimeline } from "./AuditTimeline";
 import { FeedbackButtons } from "./FeedbackButtons";
 import { StatusBadge } from "./StatusBadge";
-
-interface TransactionDrawerProps {
-  transactionId: string | null;
-  onClose: () => void;
-  /** Called after a state action so the parent can refresh feed + stats. */
-  onActionDone?: () => void;
-}
 
 const POLL_MS = 2000;
 const TERMINAL = new Set(["COMPLETED", "DECLINED"]);
@@ -29,8 +21,8 @@ export function TransactionDrawer({
   transactionId,
   onClose,
   onActionDone,
-}: TransactionDrawerProps) {
-  const [data, setData] = useState<TransactionWithResult | null>(null);
+}) {
+  const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const { tz } = useTimezone();
 
@@ -67,7 +59,7 @@ export function TransactionDrawer({
   // Close on Escape.
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
+    const onKey = (e) => {
       if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKey);
@@ -217,11 +209,6 @@ function Fact({
   value,
   mono,
   span2,
-}: {
-  label: string;
-  value: string;
-  mono?: boolean;
-  span2?: boolean;
 }) {
   return (
     <div className={span2 ? "col-span-2" : ""}>

@@ -152,34 +152,30 @@ Stage 5 — Frontend foundation (config + lib)
  27  frontend/.env.local  +  frontend/package.json
        → API/WS URLs; the Next.js 16 / React 19 / Tailwind v4 stack.
 
- 28  frontend/lib/types.ts
-       → TS mirror of models.py + the WS broadcast shape. Includes AuthUser and the
-         original-currency fields. Read alongside backend/models.py.
-
- 29  frontend/lib/api.ts
-       → Single fetch wrapper + typed REST fns (signup/login, transactions, state
+ 28  frontend/lib/api.js
+       → Single fetch wrapper + REST fns (signup/login, transactions, state
          actions, feedback), streamChat(), and wsAlertsUrl().
 
- 30  frontend/lib/format.ts
+ 29  frontend/lib/format.js
        → Currency/percent/latency/relative-time formatters, decision→color maps,
          and the timezone renderers (formatInZone / formatShortInZone / formatIST).
 
- 31  frontend/lib/currency.ts
+ 30  frontend/lib/currency.js
        → Live USD FX rates (cached) + convertToUSD(): the client converts an entered
          currency to USD before submitting.
 
- 32  frontend/lib/geo.ts
+ 31  frontend/lib/geo.js
        → Curated location → IANA-timezone list (and IST default).
 
- 33  frontend/lib/timezone.tsx
+ 32  frontend/lib/timezone.jsx
        → Global display-timezone React context (persisted to localStorage). One
          selected zone reformats every transaction time on the dashboard.
 
- 34  frontend/lib/auth.tsx
+ 33  frontend/lib/auth.jsx
        → Auth session React context (persisted to localStorage): user, login(),
          signup(), logout(). This is what gates the dashboard.
 
- 35  frontend/lib/hooks/useWebSocket.ts
+ 34  frontend/lib/hooks/useWebSocket.js
        → Live alert subscription with backoff reconnect (feeds the transaction list).
 
 
@@ -188,58 +184,58 @@ Stage 6 — Frontend UI (shell, then components)
 ----------------------------------------------------------------------------
   Read the shell first to see how everything is mounted, then each component.
 
- 36  frontend/app/layout.tsx
+ 35  frontend/app/layout.jsx
        → Root HTML shell (fonts, global CSS). The outermost wrapper.
 
- 37  frontend/app/page.tsx
+ 36  frontend/app/page.jsx
        → The dashboard shell: AuthProvider + TimezoneProvider, the login GATE
          (AuthScreen until signed in), header (timezone picker + user menu), the
          KPI row, and the 3-pane work area (form · feed · chat) + detail drawer.
          Read this to see how the pieces below fit together.
 
- 38  frontend/components/AuthScreen.tsx
+ 37  frontend/components/AuthScreen.jsx
        → The full-screen sign in / sign up gate (email + password; signup also
          claims a unique user_id). Shown until authenticated.
 
- 39  frontend/components/TimezoneSelect.tsx
+ 38  frontend/components/TimezoneSelect.jsx
        → Searchable IANA-timezone combobox (type to filter). Used by the header and
          the submit form, both bound to the shared timezone.
 
- 40  frontend/components/StatsCards.tsx
+ 39  frontend/components/StatsCards.jsx
        → The KPI row backed by GET /stats (polled; skeleton + non-destructive error).
 
- 41  frontend/components/TransactionForm.tsx
+ 40  frontend/components/TransactionForm.jsx
        → Submit a transaction: presets + fields, the currency dropdown with a live
          USD preview, the read-only account user_id, the shared timezone picker with
          a live clock, and the amount > 0 guard.
 
- 42  frontend/components/TransactionFeed.tsx
+ 41  frontend/components/TransactionFeed.jsx
        → The live list: REST poll + WS updates merged by id; primary axis = status.
          Times render in the selected timezone.
 
- 43  frontend/components/TransactionDrawer.tsx
+ 42  frontend/components/TransactionDrawer.jsx
        → Right-side detail panel: status, facts (amount shows "₹8500 INR → $89.76",
          time in the selected zone), the AI assessment, action controls, audit.
 
- 44  frontend/components/StatusBadge.tsx
+ 43  frontend/components/StatusBadge.jsx
        → Colored pill for a transaction's lifecycle status (used across the UI).
 
- 45  frontend/components/ActionButtons.tsx
+ 44  frontend/components/ActionButtons.jsx
        → Status-driven decision controls: confirm/cancel (user), approve/reject
          (analyst) → the state-action endpoints.
 
- 46  frontend/components/FeedbackButtons.tsx
+ 45  frontend/components/FeedbackButtons.jsx
        → Analyst labels a scored txn (CONFIRMED_FRAUD / FALSE_POSITIVE) → the
          no-retraining feedback loop.
 
- 47  frontend/components/AIScoreCard.tsx
+ 46  frontend/components/AIScoreCard.jsx
        → Renders one fraud assessment in full (score, decision, risk factors,
          explanation).
 
- 48  frontend/components/AuditTimeline.tsx
+ 47  frontend/components/AuditTimeline.jsx
        → Vertical timeline of a transaction's state transitions (the audit ledger).
 
- 49  frontend/components/AIAnalystChat.tsx
+ 48  frontend/components/AIAnalystChat.jsx
        → Streaming chat with the AI fraud-analyst assistant (POST /chat; pinned
          transactions become grounding context).
 
@@ -247,11 +243,11 @@ Stage 6 — Frontend UI (shell, then components)
 ----------------------------------------------------------------------------
 End-to-end trace (read after the files — the runtime path)
 ----------------------------------------------------------------------------
-  1. Visitor hits the site → page.tsx sees no auth session (lib/auth.tsx) →
+  1. Visitor hits the site → page.jsx sees no auth session (lib/auth.jsx) →
      AuthScreen. Sign up / sign in → POST /auth/signup | /auth/login (main.py →
      auth.py → users table). The account's user_id is stored client-side.
   2. In the form (TransactionForm) the user picks a currency + timezone, enters an
-     amount → lib/currency.ts converts it to USD → POST /transactions (api.ts).
+     amount → lib/currency.js converts it to USD → POST /transactions (api.js).
   3. main.py persists the row (status=SCORING) + publishes to Kafka
      (kafka_producer.py), keyed by user_id, and returns 202.
   4. kafka_consumer.py polls the message → builds context (redis_client.py) →
@@ -259,7 +255,7 @@ End-to-end trace (read after the files — the runtime path)
      with ai/cache_manager for retries) → UPSERTs fraud_results.
   5. The AI recommendation advances transactions.status via transaction_state.py
      (guarded + audited), and policy.py applies any hard overrides.
-  6. websocket_manager.py broadcasts the change → useWebSocket.ts → the feed and
+  6. websocket_manager.py broadcasts the change → useWebSocket.js → the feed and
      drawer update live; times render in the chosen timezone.
   7. A human confirms/cancels (user) or approves/rejects (analyst) via
      ActionButtons → the state endpoints → another audited transition + broadcast.

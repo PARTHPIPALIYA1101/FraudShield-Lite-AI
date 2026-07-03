@@ -11,25 +11,18 @@ import {
   confirmTransaction,
   rejectTransaction,
 } from "@/lib/api";
-import type { TransactionStatus } from "@/lib/types";
-
-interface ActionButtonsProps {
-  transactionId: string;
-  status: TransactionStatus;
-  onActionDone?: () => void;
-}
 
 export function ActionButtons({
   transactionId,
   status,
   onActionDone,
-}: ActionButtonsProps) {
-  const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+}) {
+  const [busy, setBusy] = useState(null);
+  const [error, setError] = useState(null);
 
   const run = async (
-    action: "confirm" | "cancel" | "approve" | "reject",
-    fn: () => Promise<unknown>,
+    action,
+    fn,
   ) => {
     setBusy(action);
     setError(null);
@@ -103,9 +96,6 @@ export function ActionButtons({
 function Wrapper({
   children,
   error,
-}: {
-  children: React.ReactNode;
-  error: string | null;
 }) {
   return (
     <div className="space-y-2">
@@ -115,7 +105,7 @@ function Wrapper({
   );
 }
 
-function btn(kind: "success" | "danger" | "warn"): string {
+function btn(kind) {
   const base =
     "flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40";
   const variants = {

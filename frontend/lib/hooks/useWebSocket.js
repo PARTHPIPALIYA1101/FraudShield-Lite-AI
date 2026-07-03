@@ -5,41 +5,22 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { wsAlertsUrl } from "@/lib/api";
-import type { TransactionUpdateMessage } from "@/lib/types";
-
-export type WsStatus = "connecting" | "open" | "closed";
-
-interface UseWebSocketOptions {
-  /** Called once per parsed update (in addition to being pushed into `updates`). */
-  onUpdate?: (update: TransactionUpdateMessage) => void;
-  /** Max updates retained in state (older ones are dropped). Default 100. */
-  maxUpdates?: number;
-  /** Set false to not open the socket (e.g. SSR/feature flag). Default true. */
-  enabled?: boolean;
-}
-
-interface UseWebSocketResult {
-  status: WsStatus;
-  updates: TransactionUpdateMessage[];
-  lastUpdate: TransactionUpdateMessage | null;
-  clear: () => void;
-}
 
 const BASE_DELAY_MS = 1000; // first reconnect wait
 const MAX_DELAY_MS = 30000; // backoff ceiling
 
 export function useWebSocket(
-  options: UseWebSocketOptions = {},
-): UseWebSocketResult {
+  options = {},
+) {
   const { onUpdate, maxUpdates = 100, enabled = true } = options;
 
-  const [status, setStatus] = useState<WsStatus>("connecting");
-  const [updates, setUpdates] = useState<TransactionUpdateMessage[]>([]);
-  const [lastUpdate, setLastUpdate] = useState<TransactionUpdateMessage | null>(null);
+  const [status, setStatus] = useState("connecting");
+  const [updates, setUpdates] = useState([]);
+  const [lastUpdate, setLastUpdate] = useState(null);
 
   // Refs that must survive renders without re-triggering the connect effect.
-  const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wsRef = useRef(null);
+  const reconnectTimer = useRef(null);
   const attemptRef = useRef(0);
   const closedByUs = useRef(false);
   const onUpdateRef = useRef(onUpdate);
@@ -65,7 +46,7 @@ export function useWebSocket(
       }
 
       setStatus("connecting");
-      let ws: WebSocket;
+      let ws;
       try {
         ws = new WebSocket(wsAlertsUrl());
       } catch {
@@ -80,9 +61,9 @@ export function useWebSocket(
       };
 
       ws.onmessage = (event) => {
-        let update: TransactionUpdateMessage;
+        let update;
         try {
-          update = JSON.parse(event.data) as TransactionUpdateMessage;
+          update = JSON.parse(event.data);
         } catch {
           return; // ignore non-JSON / unexpected frames
         }

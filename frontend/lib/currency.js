@@ -1,14 +1,8 @@
 // Real-time FX: fetch live USD rates and convert any supported currency to USD.
 // The backend stores every amount in USD, so the form converts before submitting.
 
-export interface Currency {
-  code: string;
-  label: string;
-  symbol: string;
-}
-
 // Codes supported by the open.er-api.com free endpoint (no API key required).
-export const CURRENCIES: Currency[] = [
+export const CURRENCIES = [
   { code: "USD", label: "US Dollar", symbol: "$" },
   { code: "EUR", label: "Euro", symbol: "€" },
   { code: "GBP", label: "British Pound", symbol: "£" },
@@ -25,16 +19,11 @@ export const CURRENCIES: Currency[] = [
 const RATES_URL = "https://open.er-api.com/v6/latest/USD";
 const TTL_MS = 60 * 60 * 1000; // rates refresh hourly
 
-interface RateCache {
-  rates: Record<string, number>; // USD -> currency multipliers
-  fetchedAt: number;
-}
-
-let cache: RateCache | null = null;
-let inflight: Promise<Record<string, number>> | null = null;
+let cache = null;
+let inflight = null;
 
 /** Live USD-based rate table, cached for an hour and de-duplicated across callers. */
-export async function getRates(): Promise<Record<string, number>> {
+export async function getRates() {
   if (cache && Date.now() - cache.fetchedAt < TTL_MS) return cache.rates;
   if (inflight) return inflight;
 
@@ -46,7 +35,7 @@ export async function getRates(): Promise<Record<string, number>> {
       if (body?.result !== "success" || !body?.rates) {
         throw new Error("unexpected rates payload");
       }
-      cache = { rates: body.rates as Record<string, number>, fetchedAt: Date.now() };
+      cache = { rates: body.rates, fetchedAt: Date.now() };
       return cache.rates;
     } finally {
       inflight = null;
@@ -59,7 +48,7 @@ export async function getRates(): Promise<Record<string, number>> {
  * Convert `amount` in `code` to USD using live rates.
  * rates[code] is "how many `code` per 1 USD", so USD = amount / rates[code].
  */
-export async function convertToUSD(amount: number, code: string): Promise<number> {
+export async function convertToUSD(amount, code) {
   if (code === "USD") return amount;
   const rates = await getRates();
   const rate = rates[code];
@@ -67,6 +56,6 @@ export async function convertToUSD(amount: number, code: string): Promise<number
   return amount / rate;
 }
 
-export function currencySymbol(code: string): string {
+export function currencySymbol(code) {
   return CURRENCIES.find((c) => c.code === code)?.symbol ?? "";
 }

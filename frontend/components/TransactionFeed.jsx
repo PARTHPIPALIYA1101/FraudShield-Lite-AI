@@ -8,27 +8,8 @@ import { listTransactions } from "@/lib/api";
 import { decisionColors, formatCurrency, formatInZone, formatRelativeTime, formatShortInZone, statusColors, statusLabel } from "@/lib/format";
 import { useWebSocket } from "@/lib/hooks/useWebSocket";
 import { useTimezone } from "@/lib/timezone";
-import type {
-  Decision,
-  TransactionStatus,
-  TransactionUpdateMessage,
-  TransactionWithResult,
-} from "@/lib/types";
 
-/** Normalized row shape the feed renders, sourced from REST or WS. */
-interface FeedItem {
-  id: string;
-  user_id: string;
-  merchant: string;
-  amount: number;
-  is_foreign_merchant: boolean;
-  ts: string; // ISO — created_at (REST) or timestamp (WS); used for sort
-  status: TransactionStatus;
-  recommendation: Decision | null;
-  fraud_score: number | null;
-}
-
-function fromRest(t: TransactionWithResult): FeedItem {
+function fromRest(t) {
   return {
     id: t.transaction.id,
     user_id: t.transaction.user_id,
@@ -42,7 +23,7 @@ function fromRest(t: TransactionWithResult): FeedItem {
   };
 }
 
-function fromUpdate(u: TransactionUpdateMessage): FeedItem {
+function fromUpdate(u) {
   return {
     id: u.transaction.id,
     user_id: u.transaction.user_id,
@@ -56,7 +37,7 @@ function fromUpdate(u: TransactionUpdateMessage): FeedItem {
   };
 }
 
-const STATUS_FILTERS: Array<{ label: string; value: TransactionStatus | "ALL" }> = [
+const STATUS_FILTERS = [
   { label: "All", value: "ALL" },
   { label: "Awaiting User", value: "PENDING_USER_CONFIRMATION" },
   { label: "Awaiting Analyst", value: "PENDING_ANALYST_REVIEW" },
@@ -67,27 +48,20 @@ const STATUS_FILTERS: Array<{ label: string; value: TransactionStatus | "ALL" }>
 const POLL_MS = 5000;
 const PAGE_LIMIT = 50;
 
-interface TransactionFeedProps {
-  selectedId?: string | null;
-  onSelect?: (id: string) => void;
-  /** Bump to force an immediate REST refresh (e.g. after a submit or an action). */
-  refreshKey?: number;
-}
-
 export function TransactionFeed({
   selectedId,
   onSelect,
   refreshKey = 0,
-}: TransactionFeedProps) {
+}) {
   // Map id -> item is the source of truth; render derives a sorted array.
-  const [itemsById, setItemsById] = useState<Map<string, FeedItem>>(new Map());
-  const [filter, setFilter] = useState<TransactionStatus | "ALL">("ALL");
+  const [itemsById, setItemsById] = useState(new Map());
+  const [filter, setFilter] = useState("ALL");
   const [loading, setLoading] = useState(true); // until the first poll resolves
   const [error, setError] = useState(false); // last poll failed (stale data shown)
   const { tz } = useTimezone();
   const mounted = useRef(true);
 
-  const mergeItems = useCallback((incoming: FeedItem[]) => {
+  const mergeItems = useCallback((incoming) => {
     setItemsById((prev) => {
       const next = new Map(prev);
       for (const item of incoming) {
@@ -107,7 +81,7 @@ export function TransactionFeed({
   // --- WS: reflect every transition the instant it happens ---
   useWebSocket({
     onUpdate: useCallback(
-      (u: TransactionUpdateMessage) => mergeItems([fromUpdate(u)]),
+      (u) => mergeItems([fromUpdate(u)]),
       [mergeItems],
     ),
   });
@@ -115,7 +89,7 @@ export function TransactionFeed({
   // --- REST poll: full, self-healing picture ---
   useEffect(() => {
     mounted.current = true;
-    let timer: ReturnType<typeof setTimeout>;
+    let timer;
 
     const tick = async () => {
       try {

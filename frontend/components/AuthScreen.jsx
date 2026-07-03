@@ -7,20 +7,18 @@ import { useState } from "react";
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
-type Mode = "login" | "signup";
-
 export function AuthScreen() {
   const { login, signup } = useAuth();
-  const [mode, setMode] = useState<Mode>("login");
+  const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [userId, setUserId] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState(null);
 
   const isSignup = mode === "signup";
 
-  const switchMode = (m: Mode) => {
+  const switchMode = (m) => {
     setMode(m);
     setError(null);
   };
@@ -32,7 +30,7 @@ export function AuthScreen() {
     (!isSignup || password.length >= 8) &&
     !busy;
 
-  const submit = async (e: React.FormEvent) => {
+  const submit = async (e) => {
     e.preventDefault();
     if (!canSubmit) return;
     setBusy(true);
@@ -170,9 +168,6 @@ const inputCls =
 function Field({
   label,
   children,
-}: {
-  label: string;
-  children: React.ReactNode;
 }) {
   return (
     <div>

@@ -6,25 +6,17 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { allTimezones, offsetLabel } from "@/lib/timezone";
 
-interface TimezoneSelectProps {
-  value: string;
-  onChange: (tz: string) => void;
-  className?: string;
-  buttonClassName?: string;
-  placeholder?: string;
-}
-
 export function TimezoneSelect({
   value,
   onChange,
   className,
   buttonClassName,
   placeholder = "Search timezone…",
-}: TimezoneSelectProps) {
+}) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const rootRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const rootRef = useRef(null);
+  const inputRef = useRef(null);
 
   const zones = useMemo(() => allTimezones(), []);
   const filtered = useMemo(() => {
@@ -38,12 +30,12 @@ export function TimezoneSelect({
   // Close on outside click / Escape; focus the search box when opening.
   useEffect(() => {
     if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
+    const onDown = (e) => {
+      if (rootRef.current && !rootRef.current.contains(e.target)) {
         setOpen(false);
       }
     };
-    const onKey = (e: KeyboardEvent) => {
+    const onKey = (e) => {
       if (e.key === "Escape") setOpen(false);
     };
     document.addEventListener("mousedown", onDown);
@@ -55,7 +47,7 @@ export function TimezoneSelect({
     };
   }, [open]);
 
-  const pick = (tz: string) => {
+  const pick = (tz) => {
     onChange(tz);
     setOpen(false);
     setQuery("");

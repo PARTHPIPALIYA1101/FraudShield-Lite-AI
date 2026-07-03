@@ -14,36 +14,27 @@ import {
 } from "react";
 
 import { login as apiLogin, signup as apiSignup } from "./api";
-import type { AuthUser } from "./types";
 
 const STORAGE_KEY = "fraudshield.auth_user";
 
-interface AuthCtx {
-  user: AuthUser | null;
-  ready: boolean; // false until localStorage has been read (avoids a login flash)
-  login: (email: string, password: string) => Promise<void>;
-  signup: (email: string, password: string, userId: string) => Promise<void>;
-  logout: () => void;
-}
+const Ctx = createContext(null);
 
-const Ctx = createContext<AuthCtx | null>(null);
-
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<AuthUser | null>(null);
+export function AuthProvider({ children }) {
+  const [user, setUser] = useState(null);
   const [ready, setReady] = useState(false);
 
   // Restore a persisted session on mount (client-only, SSR-safe).
   useEffect(() => {
     try {
       const raw = window.localStorage.getItem(STORAGE_KEY);
-      if (raw) setUser(JSON.parse(raw) as AuthUser);
+      if (raw) setUser(JSON.parse(raw));
     } catch {
       /* ignore corrupt/absent storage */
     }
     setReady(true);
   }, []);
 
-  const persist = useCallback((u: AuthUser | null) => {
+  const persist = useCallback((u) => {
     setUser(u);
     try {
       if (u) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(u));
@@ -54,14 +45,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const login = useCallback(
-    async (email: string, password: string) => {
+    async (email, password) => {
       persist(await apiLogin({ email, password }));
     },
     [persist],
   );
 
   const signup = useCallback(
-    async (email: string, password: string, userId: string) => {
+    async (email, password, userId) => {
       persist(await apiSignup({ email, password, user_id: userId }));
     },
     [persist],
@@ -76,7 +67,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
-export function useAuth(): AuthCtx {
+export function useAuth() {
   const ctx = useContext(Ctx);
   if (!ctx) throw new Error("useAuth must be used within an AuthProvider");
   return ctx;

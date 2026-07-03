@@ -5,28 +5,19 @@
 import { useState } from "react";
 
 import { ApiError, submitFeedback } from "@/lib/api";
-import type { AnalystLabel, Feedback } from "@/lib/types";
-
-interface FeedbackButtonsProps {
-  transactionId: string;
-  /** Whether the txn has a fraud_result yet — feedback requires one (FK NOT NULL). */
-  scored: boolean;
-  existingFeedback?: Feedback[];
-  onSubmitted?: () => void;
-}
 
 export function FeedbackButtons({
   transactionId,
   scored,
   existingFeedback = [],
   onSubmitted,
-}: FeedbackButtonsProps) {
+}) {
   const [notes, setNotes] = useState("");
-  const [submitting, setSubmitting] = useState<AnalystLabel | null>(null);
+  const [submitting, setSubmitting] = useState(null);
   const [done, setDone] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState(null);
 
-  const send = async (label: AnalystLabel) => {
+  const send = async (label) => {
     setSubmitting(label);
     setError(null);
     try {
@@ -49,7 +40,7 @@ export function FeedbackButtons({
     }
   };
 
-  const labelText: Record<AnalystLabel, string> = {
+  const labelText = {
     CONFIRMED_FRAUD: "Confirmed Fraud",
     FALSE_POSITIVE: "False Positive",
   };

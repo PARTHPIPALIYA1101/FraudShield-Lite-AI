@@ -1,20 +1,15 @@
 // Vertical timeline of a transaction's state transitions (the transaction_audit ledger).
 
 import { formatRelativeTime, statusColors, statusLabel } from "@/lib/format";
-import type { AuditEntry, Actor } from "@/lib/types";
 
-const ACTOR_LABEL: Record<Actor, string> = {
+const ACTOR_LABEL = {
   AI: "AI",
   USER: "User",
   ANALYST: "Analyst",
   SYSTEM: "System",
 };
 
-interface AuditTimelineProps {
-  entries: AuditEntry[];
-}
-
-export function AuditTimeline({ entries }: AuditTimelineProps) {
+export function AuditTimeline({ entries }) {
   if (entries.length === 0) {
     return <p className="text-xs text-white/40">No history yet.</p>;
   }

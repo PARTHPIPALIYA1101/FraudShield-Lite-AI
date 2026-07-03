@@ -98,7 +98,7 @@ currency/amount preserved for display), and every transaction time renders in a
 
 | Layer        | Technology |
 |--------------|------------|
-| Frontend     | Next.js 16 (App Router), React 19, TypeScript, Tailwind v4 |
+| Frontend     | Next.js 16 (App Router), React 19, JavaScript, Tailwind v4 |
 | Backend      | FastAPI, Pydantic v2, SQLAlchemy 2.0 (async), Uvicorn |
 | Streaming    | Apache Kafka (confluent-kafka), Zookeeper |
 | Datastore    | PostgreSQL (asyncpg), Redis (redis-py async) |
@@ -261,7 +261,7 @@ Frontend config is in `frontend/.env.local` and is **inlined at build time**
 (`NEXT_PUBLIC_API_URL=/api`, `NEXT_PUBLIC_WS_URL=/api`) so the full-stack Docker
 run (Option A) works out of the box. For host dev against a bare backend, set
 them to `http://localhost:8000` / `ws://localhost:8000`. Relative values are
-resolved against the page origin for the WebSocket (`lib/api.ts` → `wsAlertsUrl`).
+resolved against the page origin for the WebSocket (`lib/api.js` → `wsAlertsUrl`).
 
 **Switching to Claude:** set `LLM_PROVIDER=anthropic` + a valid key + base URL.
 No code changes — the scorer and chat layers resolve the provider at runtime.

@@ -6,23 +6,17 @@ import { useEffect, useRef, useState } from "react";
 
 import { getStats } from "@/lib/api";
 import { formatLatency, formatPercent } from "@/lib/format";
-import type { Stats } from "@/lib/types";
 
 const POLL_MS = 5000;
 
-interface StatsCardsProps {
-  /** Bump this to force an immediate refresh (e.g. after submitting a txn). */
-  refreshKey?: number;
-}
-
-export function StatsCards({ refreshKey = 0 }: StatsCardsProps) {
-  const [stats, setStats] = useState<Stats | null>(null);
-  const [error, setError] = useState<string | null>(null);
+export function StatsCards({ refreshKey = 0 }) {
+  const [stats, setStats] = useState(null);
+  const [error, setError] = useState(null);
   const mounted = useRef(true);
 
   useEffect(() => {
     mounted.current = true;
-    let timer: ReturnType<typeof setTimeout>;
+    let timer;
 
     const tick = async () => {
       try {

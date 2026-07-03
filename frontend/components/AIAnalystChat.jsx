@@ -6,29 +6,19 @@ import { useEffect, useRef, useState } from "react";
 
 import { streamChat } from "@/lib/api";
 
-interface ChatMessage {
-  role: "user" | "assistant";
-  content: string;
-}
-
-interface AIAnalystChatProps {
-  /** Transaction ids the analyst has pinned as context (e.g. the selected row). */
-  contextTxnIds?: string[];
-}
-
-export function AIAnalystChat({ contextTxnIds = [] }: AIAnalystChatProps) {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+export function AIAnalystChat({ contextTxnIds = [] }) {
+  const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
 
   // One session id for the lifetime of this component instance.
-  const sessionId = useRef<string>(
+  const sessionId = useRef(
     typeof crypto !== "undefined" && "randomUUID" in crypto
       ? crypto.randomUUID()
       : `sess-${Math.floor(Math.random() * 1e9)}`,
   );
-  const abortRef = useRef<AbortController | null>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef(null);
+  const scrollRef = useRef(null);
 
   // Autoscroll to the newest content.
   useEffect(() => {
@@ -94,7 +84,7 @@ export function AIAnalystChat({ contextTxnIds = [] }: AIAnalystChatProps) {
     }
   };
 
-  const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const onKeyDown = (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       send();

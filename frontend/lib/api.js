@@ -1,30 +1,14 @@
 // Typed client for the FraudShield backend (single fetch wrapper + chat stream reader).
 
-import type {
-  AuthUser,
-  ChatRequest,
-  FeedbackCreate,
-  FeedbackResponse,
-  Health,
-  LoginRequest,
-  PaginatedTransactions,
-  SignupRequest,
-  StateActionRequest,
-  StateActionResponse,
-  Stats,
-  TransactionCreate,
-  TransactionQueued,
-  TransactionWithResult,
-} from "./types";
-
 export const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 export const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8000";
 
 /** Error carrying the HTTP status so callers can branch (e.g. 409 not-scored-yet). */
 export class ApiError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(status, message) {
     super(message);
+    this.status = status;
     this.name = "ApiError";
   }
 }
@@ -35,14 +19,14 @@ export class ApiError extends Error {
  * Pydantic 422 sends an ARRAY of {loc, msg, type} objects — rendering that
  * directly is what produced the "[object Object]" message on a bad email.
  */
-function extractDetail(body: unknown): string | null {
+function extractDetail(body) {
   if (!body || typeof body !== "object") return null;
-  const detail = (body as { detail?: unknown }).detail;
+  const detail = body.detail;
   if (typeof detail === "string") return detail;
   if (Array.isArray(detail)) {
     const msgs = detail
-      .map((e) => (e && typeof e === "object" ? (e as { msg?: string }).msg : null))
-      .filter((m): m is string => Boolean(m))
+      .map((e) => (e && typeof e === "object" ? e.msg : null))
+      .filter((m) => Boolean(m))
       // Pydantic prefixes value_error messages with "Value error, "; drop it.
       .map((m) => m.replace(/^Value error,\s*/i, ""));
     if (msgs.length) return msgs.join("; ");
@@ -50,7 +34,7 @@ function extractDetail(body: unknown): string | null {
   return null;
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request(path, init) {
   const res = await fetch(`${API_URL}${path}`, {
     headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
     ...init,
@@ -69,84 +53,79 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   // 204/empty bodies -> undefined; otherwise parse JSON.
-  if (res.status === 204) return undefined as T;
-  return (await res.json()) as T;
+  if (res.status === 204) return undefined;
+  return await res.json();
 }
 
 // Auth.
-export function signup(body: SignupRequest): Promise<AuthUser> {
-  return request<AuthUser>("/auth/signup", {
+export function signup(body) {
+  return request("/auth/signup", {
     method: "POST",
     body: JSON.stringify(body),
   });
 }
 
-export function login(body: LoginRequest): Promise<AuthUser> {
-  return request<AuthUser>("/auth/login", {
+export function login(body) {
+  return request("/auth/login", {
     method: "POST",
     body: JSON.stringify(body),
   });
 }
 
 // System.
-export const getHealth = () => request<Health>("/health");
-export const getStats = () => request<Stats>("/stats");
+export const getHealth = () => request("/health");
+export const getStats = () => request("/stats");
 
 // Transactions.
 export function createTransaction(
-  body: TransactionCreate,
-): Promise<TransactionQueued> {
-  return request<TransactionQueued>("/transactions", {
+  body,
+) {
+  return request("/transactions", {
     method: "POST",
     body: JSON.stringify(body),
   });
 }
 
-export function listTransactions(params?: {
-  page?: number;
-  limit?: number;
-  status?: string;
-  decision?: string;
-}): Promise<PaginatedTransactions> {
+export function listTransactions(params) {
   const q = new URLSearchParams();
   if (params?.page) q.set("page", String(params.page));
   if (params?.limit) q.set("limit", String(params.limit));
   if (params?.status) q.set("status", params.status);
   if (params?.decision) q.set("decision", params.decision);
   const qs = q.toString();
-  return request<PaginatedTransactions>(`/transactions${qs ? `?${qs}` : ""}`);
+  return request(`/transactions${qs ? `?${qs}` : ""}`);
 }
 
-export function getTransaction(id: string): Promise<TransactionWithResult> {
-  return request<TransactionWithResult>(`/transactions/${id}`);
+export function getTransaction(id) {
+  return request(`/transactions/${id}`);
 }
 
 // State actions — the human decisions the AI may only RECOMMEND.
 function stateAction(
-  id: string,
-  action: "confirm" | "cancel" | "approve" | "reject",
-  body?: StateActionRequest,
-): Promise<StateActionResponse> {
-  return request<StateActionResponse>(`/transactions/${id}/${action}`, {
+  id,
+  action,
+  body,
+) {
+  return request(`/transactions/${id}/${action}`, {
     method: "POST",
     body: JSON.stringify(body ?? {}),
   });
 }
 
-export const confirmTransaction = (id: string, body?: StateActionRequest) =>
+export const confirmTransaction = (id, body) =>
   stateAction(id, "confirm", body);
-export const cancelTransaction = (id: string, body?: StateActionRequest) =>
+export const cancelTransaction = (id, body) =>
   stateAction(id, "cancel", body);
-export const approveTransaction = (id: string, body?: StateActionRequest) =>
+export const approveTransaction = (id, body) =>
   stateAction(id, "approve", body);
-export const rejectTransaction = (id: string, body?: StateActionRequest) =>
+export const rejectTransaction = (id, body) =>
   stateAction(id, "reject", body);
 
 // Feedback.
 export function submitFeedback(
-  body: FeedbackCreate,
-): Promise<FeedbackResponse> {
-  return request<FeedbackResponse>("/feedback", {
+  body,
+) {
+  return request("/feedback", {
     method: "POST",
     body: JSON.stringify(body),
   });
@@ -154,10 +133,10 @@ export function submitFeedback(
 
 // Chat — streaming text/plain; calls onChunk per batch, resolves with the full answer.
 export async function streamChat(
-  body: ChatRequest,
-  onChunk: (text: string) => void,
-  signal?: AbortSignal,
-): Promise<string> {
+  body,
+  onChunk,
+  signal,
+) {
   const res = await fetch(`${API_URL}/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -195,7 +174,7 @@ export async function streamChat(
 // ("/api", the nginx-proxied Docker setup). The browser's WebSocket constructor
 // requires an ABSOLUTE ws://|wss:// URL, so resolve a relative value against the
 // current page origin (mapping http→ws / https→wss).
-export function wsAlertsUrl(): string {
+export function wsAlertsUrl() {
   const path = "/ws/alerts";
   if (/^wss?:\/\//i.test(WS_URL)) return `${WS_URL}${path}`;
   if (typeof window !== "undefined") {

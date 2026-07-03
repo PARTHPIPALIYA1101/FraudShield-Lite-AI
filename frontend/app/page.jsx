@@ -14,7 +14,6 @@ import { TransactionForm } from "@/components/TransactionForm";
 import { getHealth } from "@/lib/api";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { TimezoneProvider, useTimezone } from "@/lib/timezone";
-import type { Health } from "@/lib/types";
 
 export default function DashboardPage() {
   return (
@@ -35,10 +34,10 @@ function AuthGate() {
 }
 
 function Dashboard() {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  const handleSubmitted = (txnId: string) => {
+  const handleSubmitted = (txnId) => {
     setRefreshKey((k) => k + 1); // refresh stats + feed immediately
     setSelectedId(txnId); // open the drawer to watch it get scored
   };
@@ -132,11 +131,11 @@ function DisplayTimezoneControl() {
 
 /** Small live health dot in the header — polls /health every 10s. */
 function HealthIndicator() {
-  const [health, setHealth] = useState<Health | null>(null);
+  const [health, setHealth] = useState(null);
   const [reachable, setReachable] = useState(true);
 
   useEffect(() => {
-    let timer: ReturnType<typeof setTimeout>;
+    let timer;
     let on = true;
     const tick = async () => {
       try {

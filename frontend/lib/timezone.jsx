@@ -16,15 +16,10 @@ import { IST_TZ } from "./geo";
 
 const STORAGE_KEY = "fraudshield.display_tz";
 
-interface TimezoneCtx {
-  tz: string;
-  setTz: (tz: string) => void;
-}
+const Ctx = createContext(null);
 
-const Ctx = createContext<TimezoneCtx | null>(null);
-
-export function TimezoneProvider({ children }: { children: React.ReactNode }) {
-  const [tz, setTzState] = useState<string>(IST_TZ);
+export function TimezoneProvider({ children }) {
+  const [tz, setTzState] = useState(IST_TZ);
 
   // Hydrate from localStorage on mount (client-only to stay SSR-safe).
   useEffect(() => {
@@ -36,7 +31,7 @@ export function TimezoneProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const setTz = useCallback((next: string) => {
+  const setTz = useCallback((next) => {
     setTzState(next);
     try {
       window.localStorage.setItem(STORAGE_KEY, next);
@@ -50,18 +45,18 @@ export function TimezoneProvider({ children }: { children: React.ReactNode }) {
 }
 
 /** Access the global display timezone. Falls back to IST outside a provider. */
-export function useTimezone(): TimezoneCtx {
+export function useTimezone() {
   const ctx = useContext(Ctx);
   if (!ctx) return { tz: IST_TZ, setTz: () => {} };
   return ctx;
 }
 
 /** Every IANA zone the runtime knows, with a small curated set floated to the top. */
-export function allTimezones(): string[] {
-  let zones: string[] = [];
+export function allTimezones() {
+  let zones = [];
   try {
     // Intl.supportedValuesOf is available in modern browsers / Node 18+.
-    const sv = (Intl as unknown as { supportedValuesOf?: (k: string) => string[] })
+    const sv = Intl
       .supportedValuesOf;
     if (sv) zones = sv("timeZone");
   } catch {
@@ -85,7 +80,7 @@ export function allTimezones(): string[] {
   return zones;
 }
 
-function isValidZone(tz: string): boolean {
+function isValidZone(tz) {
   try {
     new Intl.DateTimeFormat("en-US", { timeZone: tz });
     return true;
@@ -95,7 +90,7 @@ function isValidZone(tz: string): boolean {
 }
 
 /** Current UTC offset label for a zone, e.g. "GMT+5:30" — handy in a picker. */
-export function offsetLabel(tz: string, at: Date = new Date()): string {
+export function offsetLabel(tz, at = new Date()) {
   try {
     const parts = new Intl.DateTimeFormat("en-US", {
       timeZone: tz,

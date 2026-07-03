@@ -1,8 +1,6 @@
 // Display helpers + color maps shared across dashboard components.
 
-import type { Decision, Severity, TransactionStatus } from "./types";
-
-export function formatCurrency(amount: number): string {
+export function formatCurrency(amount) {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
@@ -11,18 +9,18 @@ export function formatCurrency(amount: number): string {
 }
 
 /** 0.1429 -> "14.3%". `digits` controls decimal places. */
-export function formatPercent(fraction: number, digits = 1): string {
+export function formatPercent(fraction, digits = 1) {
   return `${(fraction * 100).toFixed(digits)}%`;
 }
 
 /** 2092.7 -> "2.1s"; sub-second stays in ms. */
-export function formatLatency(ms: number): string {
+export function formatLatency(ms) {
   if (ms >= 1000) return `${(ms / 1000).toFixed(1)}s`;
   return `${Math.round(ms)}ms`;
 }
 
 /** Format an instant in a given IANA timezone (date + time, e.g. "Jul 1, 2026, 9:05:30 PM"). */
-export function formatInZone(iso: string | number | Date, tz: string): string {
+export function formatInZone(iso, tz) {
   const d = iso instanceof Date ? iso : new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
   return new Intl.DateTimeFormat("en-US", {
@@ -38,7 +36,7 @@ export function formatInZone(iso: string | number | Date, tz: string): string {
 }
 
 /** Compact time-of-day in a zone (e.g. "9:05 PM") for dense rows. */
-export function formatShortInZone(iso: string | number | Date, tz: string): string {
+export function formatShortInZone(iso, tz) {
   const d = iso instanceof Date ? iso : new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
   return new Intl.DateTimeFormat("en-US", {
@@ -50,13 +48,13 @@ export function formatShortInZone(iso: string | number | Date, tz: string): stri
 }
 
 /** Same instant rendered in Indian Standard Time, tagged "IST". */
-export function formatIST(iso: string | number | Date): string {
+export function formatIST(iso) {
   const s = formatInZone(iso, "Asia/Kolkata");
   return s ? `${s} IST` : "";
 }
 
 /** Relative time like "12s ago", "5m ago" from an ISO timestamp. */
-export function formatRelativeTime(iso: string): string {
+export function formatRelativeTime(iso) {
   const then = new Date(iso).getTime();
   if (Number.isNaN(then)) return "";
   const sec = Math.max(0, Math.round((Date.now() - then) / 1000));
@@ -69,14 +67,8 @@ export function formatRelativeTime(iso: string): string {
 }
 
 // Decision + severity -> Tailwind class fragments (text, bg, border, dot).
-export interface ColorSet {
-  text: string;
-  bg: string;
-  border: string;
-  dot: string;
-}
 
-const DECISION_COLORS: Record<Decision, ColorSet> = {
+const DECISION_COLORS = {
   APPROVE: {
     text: "text-emerald-400",
     bg: "bg-emerald-500/10",
@@ -97,22 +89,22 @@ const DECISION_COLORS: Record<Decision, ColorSet> = {
   },
 };
 
-export function decisionColors(decision: Decision): ColorSet {
+export function decisionColors(decision) {
   return DECISION_COLORS[decision] ?? DECISION_COLORS.REVIEW;
 }
 
-const SEVERITY_COLORS: Record<Severity, string> = {
+const SEVERITY_COLORS = {
   HIGH: "text-red-400 bg-red-500/10 border-red-500/30",
   MEDIUM: "text-amber-400 bg-amber-500/10 border-amber-500/30",
   LOW: "text-sky-400 bg-sky-500/10 border-sky-500/30",
 };
 
-export function severityClasses(severity: Severity): string {
+export function severityClasses(severity) {
   return SEVERITY_COLORS[severity] ?? SEVERITY_COLORS.LOW;
 }
 
 // Transaction lifecycle status -> color set + label (the PRIMARY axis for the feed/badges).
-const STATUS_COLORS: Record<TransactionStatus, ColorSet> = {
+const STATUS_COLORS = {
   SCORING: {
     text: "text-white/60",
     bg: "bg-white/5",
@@ -145,7 +137,7 @@ const STATUS_COLORS: Record<TransactionStatus, ColorSet> = {
   },
 };
 
-const STATUS_LABELS: Record<TransactionStatus, string> = {
+const STATUS_LABELS = {
   SCORING: "Scoring",
   COMPLETED: "Completed",
   PENDING_USER_CONFIRMATION: "Awaiting User",
@@ -153,10 +145,10 @@ const STATUS_LABELS: Record<TransactionStatus, string> = {
   DECLINED: "Declined",
 };
 
-export function statusColors(status: TransactionStatus): ColorSet {
+export function statusColors(status) {
   return STATUS_COLORS[status] ?? STATUS_COLORS.SCORING;
 }
 
-export function statusLabel(status: TransactionStatus): string {
+export function statusLabel(status) {
   return STATUS_LABELS[status] ?? status;
 }

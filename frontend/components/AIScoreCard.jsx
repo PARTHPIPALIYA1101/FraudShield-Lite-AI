@@ -1,17 +1,8 @@
 // Renders one fraud assessment in full (prop = FraudResult | FraudAssessment).
 
 import { decisionColors, formatLatency, severityClasses } from "@/lib/format";
-import type { FraudAssessment, FraudResult } from "@/lib/types";
 
-type Assessment = FraudResult | FraudAssessment;
-
-interface AIScoreCardProps {
-  result: Assessment;
-  /** Compact mode trims padding/metadata for inline use. */
-  compact?: boolean;
-}
-
-export function AIScoreCard({ result, compact = false }: AIScoreCardProps) {
+export function AIScoreCard({ result, compact = false }) {
   const colors = decisionColors(result.decision);
   const scorePct = Math.round(result.fraud_score * 100);
 

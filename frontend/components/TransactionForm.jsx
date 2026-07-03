@@ -10,15 +10,8 @@ import { useAuth } from "@/lib/auth";
 import { convertToUSD, CURRENCIES, currencySymbol } from "@/lib/currency";
 import { formatCurrency, formatInZone } from "@/lib/format";
 import { useTimezone } from "@/lib/timezone";
-import type { TransactionCreate } from "@/lib/types";
 
-interface Preset {
-  label: string;
-  hint: string;
-  values: TransactionCreate;
-}
-
-const PRESETS: Preset[] = [
+const PRESETS = [
   {
     label: "Normal",
     hint: "low risk → APPROVE",
@@ -65,25 +58,21 @@ const PRESETS: Preset[] = [
   },
 ];
 
-interface TransactionFormProps {
-  onSubmitted?: (transactionId: string) => void;
-}
-
-export function TransactionForm({ onSubmitted }: TransactionFormProps) {
-  const [form, setForm] = useState<TransactionCreate>(PRESETS[0].values);
+export function TransactionForm({ onSubmitted }) {
+  const [form, setForm] = useState(PRESETS[0].values);
   // Amount is entered in the user's chosen currency, then converted to USD.
-  const [currency, setCurrency] = useState<string>("USD");
-  const [amountInput, setAmountInput] = useState<string>(
+  const [currency, setCurrency] = useState("USD");
+  const [amountInput, setAmountInput] = useState(
     String(PRESETS[0].values.amount),
   );
-  const [usdPreview, setUsdPreview] = useState<number | null>(
+  const [usdPreview, setUsdPreview] = useState(
     PRESETS[0].values.amount,
   );
-  const [rateError, setRateError] = useState<string | null>(null);
+  const [rateError, setRateError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
-  const [flash, setFlash] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [now, setNow] = useState<Date | null>(null); // set after mount (SSR-safe)
+  const [flash, setFlash] = useState(null);
+  const [error, setError] = useState(null);
+  const [now, setNow] = useState(null); // set after mount (SSR-safe)
 
   // One shared timezone: the form's location picker and the global header
   // picker both read/write this, so changing either keeps them in sync.
@@ -99,7 +88,7 @@ export function TransactionForm({ onSubmitted }: TransactionFormProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accountUserId]);
 
-  const applyPreset = (p: Preset) => {
+  const applyPreset = (p) => {
     setForm({ ...p.values, user_id: accountUserId || p.values.user_id });
     setCurrency("USD");
     setAmountInput(String(p.values.amount));
@@ -108,9 +97,9 @@ export function TransactionForm({ onSubmitted }: TransactionFormProps) {
     setFlash(null);
   };
 
-  const update = <K extends keyof TransactionCreate>(
-    key: K,
-    value: TransactionCreate[K],
+  const update = (
+    key,
+    value,
   ) => setForm((f) => ({ ...f, [key]: value }));
 
   // Live USD preview whenever the amount or currency changes.
@@ -319,9 +308,6 @@ const inputCls =
 function Field({
   label,
   children,
-}: {
-  label: string;
-  children: React.ReactNode;
 }) {
   return (
     <div>
